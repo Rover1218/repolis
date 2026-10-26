@@ -1,0 +1,235 @@
+/* Front page: the city page's hologram language, CSS only. */
+
+.page {
+  position: relative;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 48px 16px;
+  overflow: hidden;
+  background: var(--bg);
+  isolation: isolate;
+}
+
+/* Perspective grid floor receding to a horizon */
+.floor {
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: 0;
+  height: 55%;
+  z-index: -3;
+  background-image:
+    linear-gradient(var(--accent-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--accent-line) 1px, transparent 1px);
+  background-size: 64px 64px;
+  transform: perspective(420px) rotateX(62deg);
+  transform-origin: 50% 100%;
+  mask-image: linear-gradient(to top, #000 0%, transparent 85%);
+  -webkit-mask-image: linear-gradient(to top, #000 0%, transparent 85%);
+  opacity: 0.55;
+}
+
+.glow {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(ellipse 60% 38% at 50% 62%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 30% at 50% 40%, rgba(140, 90, 255, 0.16), transparent 70%),
+    radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.75) 100%);
+}
+
+.scanlines {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 3px);
+  mix-blend-mode: overlay;
+}
+
+.hero {
+  width: min(640px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 28px;
+  text-align: center;
+}
+
+.wordmark {
+  margin: 0;
+  font: 700 clamp(44px, 14vw, 112px) / 0.95 var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow:
+    0 0 18px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 60px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.tagline {
+  margin: -8px 0 8px;
+  font: 500 clamp(16px, 4.2vw, 22px) / 1.35 var(--font-display);
+  color: var(--ink);
+}
+
+/* Paste box */
+
+.form {
+  text-align: left;
+}
+
+.field {
+  display: flex;
+  background: var(--panel);
+  border: 1px solid var(--accent-line);
+  border-radius: 4px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 12%, transparent);
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+.field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 48px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.field:has(.input[aria-invalid="true"]) {
+  border-color: #ff8fa3;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 18px 16px;
+  font: 400 16px/1.2 var(--font-ui), ui-monospace, Consolas, monospace;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 4px 0 0 4px;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--dim);
+}
+
+.build {
+  padding: 0 24px;
+  font: 700 15px/1 var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--accent);
+  border: 0;
+  border-radius: 0 3px 3px 0;
+  cursor: pointer;
+  transition: background 150ms, box-shadow 150ms, transform 100ms;
+}
+
+.build:hover {
+  background: color-mix(in srgb, var(--accent) 80%, white);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.build:active {
+  transform: translateY(1px);
+}
+
+.build:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -4px;
+}
+
+.error {
+  margin: 10px 2px 0;
+  font-size: 13px;
+  color: #ff8fa3;
+}
+
+/* Example chips */
+
+.examples {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.examplesLabel {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  display: inline-block;
+  padding: 9px 14px;
+  font-size: 14px;
+  text-decoration: none;
+  background: var(--panel);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  transition: border-color 150ms, background 150ms, box-shadow 150ms, transform 150ms;
+}
+
+.chipOwner {
+  color: var(--dim);
+}
+
+.chipRepo {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.chip:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 20px var(--accent-soft);
+  transform: translateY(-2px);
+}
+
+.chip:active {
+  transform: translateY(0);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 480px) {
+  .hero {
+    gap: 22px;
+  }
+
+  .build {
+    padding: 0 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field,
+  .build,
+  .chip {
+    transition: none;
+  }
+
+  .chip:hover {
+    transform: none;
+  }
+}

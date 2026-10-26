@@ -1,0 +1,6 @@
+[
+  { "owner": "facebook", "repo": "react" },
+  { "owner": "sveltejs", "repo": "svelte" },
+  { "owner": "vitejs", "repo": "vite" },
+  { "owner": "expressjs", "repo": "express" }
+]
