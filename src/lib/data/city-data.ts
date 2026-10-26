@@ -1,3 +1,4 @@
+import 'server-only';
 import { CityError } from '@/lib/errors';
 import type { GitHub } from '@/lib/github/types';
 import { buildBatch, buildLatest, buildManifest } from '@/lib/history/build';

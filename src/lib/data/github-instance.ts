@@ -1,3 +1,4 @@
+import 'server-only';
 import { createGitHub } from '@/lib/github/client';
 import type { GitHub } from '@/lib/github/types';
 
