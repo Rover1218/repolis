@@ -57,5 +57,12 @@ function Card({ name, bars }: { name: string | null; bars: number[] | null }) {
 
 export default async function Image({ params }: { params: Promise<{ owner: string; repo: string }> }) {
   const result = await loadBars(await params);
-  return new ImageResponse(<Card name={result?.name ?? null} bars={result?.bars ?? null} />, { ...size });
+  if (result) {
+    try {
+      return new ImageResponse(<Card name={result.name} bars={result.bars} />, { ...size });
+    } catch (error) {
+      console.error('og: skyline card failed, using generic card', error);
+    }
+  }
+  return new ImageResponse(<Card name={null} bars={null} />, { ...size });
 }
