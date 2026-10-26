@@ -10,7 +10,7 @@ import styles from './city.module.css';
 import type { CityDirector, DirectorUi, ReplayCity } from './director';
 import { DistrictLabels, type LabelsHandle } from './DistrictLabels';
 import { ErrorPanel } from './ErrorPanel';
-import { Hud } from './Hud';
+import { DivePanel, Hud } from './Hud';
 import { ShareButtons } from './ShareButtons';
 import { Timeline, type TimelineProps } from './Timeline';
 import { moveTooltip, Tooltip } from './Tooltip';
@@ -145,8 +145,16 @@ export function CityView({ owner, repo }: CityViewProps) {
               Building {owner}/{repo}…
             </p>
           )}
-          {timeline && <Timeline {...timeline} />}
-          {director && <ShareButtons fullName={name} onSaveImage={() => director.screenshot()} />}
+          {/* One bottom dock: the Dive and Share panels stack above the timeline, so none can overlap (R28). */}
+          <div className={styles.dock}>
+            {(dive || director) && (
+              <div className={styles.cluster}>
+                {dive && <DivePanel inside={dive.inside} onToggle={dive.onToggle} />}
+                {director && <ShareButtons fullName={name} onSaveImage={() => director.screenshot()} />}
+              </div>
+            )}
+            {timeline && <Timeline {...timeline} />}
+          </div>
         </>
       )}
       <Tooltip ref={tipRef} info={error ? null : info} />

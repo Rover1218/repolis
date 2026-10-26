@@ -24,17 +24,21 @@ export function Hud({ name, stats, dive }: HudProps) {
         )}
       </header>
       {dive && (
-        <>
-          <nav className={`${styles.panel} ${styles.nav}`} aria-label="Camera">
-            <button type="button" onClick={dive.onToggle}>
-              {dive.inside ? 'Step out ↑' : 'Dive in ↓'}
-            </button>
-          </nav>
-          <p className={styles.hint}>
-            drag: orbit · scroll: zoom · double-click a building: fly to it · WASD: walk · Q/E: down/up · Esc: step out
-          </p>
-        </>
+        <p className={styles.hint}>
+          drag: orbit · scroll: zoom · double-click a building: fly to it · WASD: walk · Q/E: down/up · Esc: step out
+        </p>
       )}
     </>
+  );
+}
+
+/** The Dive / Step out button, stacked in the bottom-right cluster by CityView. */
+export function DivePanel({ inside, onToggle }: { inside: boolean; onToggle: () => void }) {
+  return (
+    <nav className={`${styles.panel} ${styles.nav}`} aria-label="Camera">
+      <button type="button" onClick={onToggle}>
+        {inside ? 'Step out ↑' : 'Dive in ↓'}
+      </button>
+    </nav>
   );
 }
