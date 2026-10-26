@@ -18,7 +18,7 @@ export interface TooltipArgs {
   lastChange: SnapshotMeta | null;
   /** Snapshots are exact commits, so the author of a change is known. */
   exact: boolean;
-  /** Used for merged "+N small files" blocks from Task 16 on. */
+  /** Resolves merged "+N small files" blocks to their folder and count. */
   mergePlan: MergePlan;
 }
 
@@ -50,6 +50,15 @@ export function formatOneCommit(dateIso: string): string {
   return d ? `${base} · ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}` : base;
 }
 
+/** "src/x · +312 small files" for a merged block, or null for an ordinary path. */
+function mergedTitle({ path, mergePlan }: TooltipArgs): string | null {
+  if (path !== '+small' && !path.endsWith('/+small')) return null;
+  const folder = path === '+small' ? '' : path.slice(0, -'/+small'.length);
+  const entry = mergePlan.find((p) => p.folder === folder);
+  if (entry === undefined) return null;
+  return `${folder === '' ? '/' : folder} · +${COUNT.format(entry.count)} small files`;
+}
+
 export function buildTooltipInfo(args: TooltipArgs): TooltipInfo {
   const lines = [`${formatSize(args.bytes)} · ≈${formatCount(estimateLines(args.bytes), 'line')}`];
   if (args.changes !== null) {
@@ -57,5 +66,5 @@ export function buildTooltipInfo(args: TooltipArgs): TooltipInfo {
     lines.push(`changed in ${formatCount(args.changes, 'snapshot')}${when}`);
   }
   if (args.exact && args.lastChange?.author) lines.push(`last touched by ${args.lastChange.author}`);
-  return { title: args.path, lines };
+  return { title: mergedTitle(args) ?? args.path, lines };
 }

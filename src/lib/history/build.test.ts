@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { CityError } from '@/lib/errors';
 import { buildBatch, buildLatest, buildManifest } from './build';
-import { createFakeGitHub, generateCommits } from './fake-github';
+import { createFakeGitHub, generateCommits, type FakeCommit } from './fake-github';
 
 const ref = { owner: 'facebook', repo: 'react' };
 
@@ -85,5 +85,54 @@ describe('buildBatch', () => {
     const gh = threeCommits();
     const broken = { ...gh, getCommitsAtRanks: async () => [] };
     await expect(buildManifest(broken, ref, 'c')).rejects.toMatchObject({ code: 'upstream' });
+  });
+});
+
+/** Commits that each add `perCommit` files under src/ (top-level folder) and keep everything before. */
+function hugeCommits(count: number, perCommit: number): FakeCommit[] {
+  const commits: FakeCommit[] = [];
+  let files: FakeCommit['files'] = {};
+  for (let i = 0; i < count; i++) {
+    const added: FakeCommit['files'] = {};
+    for (let j = 0; j < perCommit; j++) added[`src/c${i}_${j}.ts`] = [`b${i}_${j}`, 1 + j];
+    files = { ...files, ...added };
+    commits.push({ sha: `c${i}`, files });
+  }
+  return commits;
+}
+
+describe('huge repos', () => {
+  test('a truncated head gives a coarse manifest with 30 snapshots', async () => {
+    const gh = createFakeGitHub({ commits: hugeCommits(1000, 1), truncateRootAbove: 500 });
+    // No truncation yet at 1000 files? every commit under 500 files is complete; the head (1000) truncates.
+    const m = await buildManifest(gh, ref, 'c999');
+    expect(m.mode).toBe('coarse');
+    expect(m.snapshots).toHaveLength(30);
+    expect(m.batchSize).toBe(3);
+    expect(m.exact).toBe(false);
+    expect(m.treeRequests).toBeGreaterThan(1);
+    const latest = await buildLatest(gh, ref);
+    expect(latest.mode).toBe('coarse');
+    expect(latest.files).toHaveLength(1000);
+  });
+
+  test('over maxBuildings, latest and batches use +small paths', async () => {
+    const gh = createFakeGitHub({ commits: hugeCommits(3, 20) });
+    const opts = { maxBuildings: 10 };
+    const latest = await buildLatest(gh, ref, opts);
+    expect(latest.files.length).toBeLessThanOrEqual(10);
+    expect(latest.mergePlan.length).toBeGreaterThan(0);
+    const m = await buildManifest(gh, ref, 'c2', opts);
+    expect(m.mergePlan).toEqual(latest.mergePlan);
+    const batch = await buildBatch(gh, ref, m, 0);
+    const paths = batch.deltas.flatMap((d) => d.changes.map(([p]) => p));
+    expect(paths.some((p) => p.endsWith('/+small'))).toBe(true);
+    expect(paths.length).toBeLessThan(60);
+  });
+
+  test('buildBatch refuses when the GitHub budget is nearly spent', async () => {
+    const gh = createFakeGitHub({ commits: generateCommits(3), remaining: { remaining: 310, resetAt: Math.floor(Date.now() / 1000) + 600 } });
+    const m = await buildManifest(gh, ref, 'c2');
+    await expect(buildBatch(gh, ref, m, 0)).rejects.toMatchObject({ code: 'rate-limited' });
   });
 });

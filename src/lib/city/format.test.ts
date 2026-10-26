@@ -83,4 +83,11 @@ describe('buildTooltipInfo', () => {
     const info = buildTooltipInfo({ ...base, bytes: 10, changes: 1, lastChange: null });
     expect(info.lines).toEqual(['10 B · ≈1 line', 'changed in 1 snapshot']);
   });
+
+  it('titles a merged block with its folder and count', () => {
+    const mergePlan = [{ folder: 'src/x', keep: [], count: 312 }];
+    expect(buildTooltipInfo({ ...base, path: 'src/x/+small', mergePlan }).title).toBe('src/x · +312 small files');
+    const root = [{ folder: '', keep: [], count: 1 }];
+    expect(buildTooltipInfo({ ...base, path: '+small', mergePlan: root }).title).toBe('/ · +1 small files');
+  });
 });
