@@ -51,8 +51,9 @@ npm run dev
 3. Set `GITHUB_TOKEN` for both Production and Preview.
 4. Deploy.
 5. Warm the examples: `npm run warm -- https://<your-production-url>`. The `warm.yml` workflow also does this after each successful Production deployment.
+6. Keep the examples warm: in the GitHub repo, open Settings, Secrets and variables, Actions, Variables, and add a repository variable `REPOLIS_URL` set to the production URL (for example `https://<your-production-url>`). `warm.yml` then re-warms the examples every hour (at minute 17), so an example whose repo moved on is rebuilt before a visitor asks for it. Without the variable the hourly run is skipped.
 
-CI (`.github/workflows/ci.yml`) runs lint, typecheck, coverage and the E2E tests on every push and pull request.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, the production build, coverage and the E2E tests on every push and pull request.
 
 ## Limits
 

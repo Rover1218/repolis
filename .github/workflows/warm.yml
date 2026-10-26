@@ -1,13 +1,22 @@
 name: Warm cache
 
-on: deployment_status
+on:
+  deployment_status:
+  schedule:
+    # Hourly, so an example whose head moved is rebuilt before a visitor asks for it (R33).
+    - cron: '17 * * * *'
 
 permissions:
   contents: read
 
 jobs:
   warm:
-    if: github.event.deployment_status.state == 'success' && github.event.deployment_status.environment == 'Production'
+    # Skipped (and not billed) when the hourly run has no REPOLIS_URL repository variable to warm.
+    if: >-
+      (github.event_name == 'deployment_status' &&
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment_status.environment == 'Production') ||
+      (github.event_name == 'schedule' && vars.REPOLIS_URL != '')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -15,7 +24,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Warm example cities
+      - name: Warm example cities after a Production deployment
+        if: github.event_name == 'deployment_status'
         env:
           BASE_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
         run: node scripts/warm.mjs "$BASE_URL"
+      - name: Warm example cities (hourly)
+        if: github.event_name == 'schedule' && vars.REPOLIS_URL != ''
+        env:
+          REPOLIS_URL: ${{ vars.REPOLIS_URL }}
+        run: node scripts/warm.mjs "$REPOLIS_URL"
