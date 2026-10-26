@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { CityError } from '@/lib/errors';
 import type { GitHub } from '@/lib/github/types';
 import type { TreeSnapshot } from './diff';
+import { smallPath } from './merge-plan';
 import type { MergePlan } from './types';
 
 export const MAX_BUILDINGS = 20000;
@@ -9,14 +10,11 @@ export const KEEP_PER_FOLDER = 8;
 export const GITHUB_RESERVE = 300;
 /** Deepest ancestor depth the subtree fallback groups by; bounds work on hostile deep paths. */
 export const MAX_FALLBACK_DEPTH = 16;
-const SMALL_NAME = '+small';
 
 function parentFolder(path: string): string {
   const i = path.lastIndexOf('/');
   return i < 0 ? '' : path.slice(0, i);
 }
-
-const smallPath = (folder: string): string => (folder === '' ? SMALL_NAME : `${folder}/${SMALL_NAME}`);
 
 const compareStrings = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 

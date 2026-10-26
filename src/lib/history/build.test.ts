@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { CityError } from '@/lib/errors';
 import { buildBatch, buildLatest, buildManifest } from './build';
 import { createFakeGitHub, generateCommits, type FakeCommit } from './fake-github';
@@ -134,5 +134,46 @@ describe('huge repos', () => {
     const gh = createFakeGitHub({ commits: generateCommits(3), remaining: { remaining: 310, resetAt: Math.floor(Date.now() / 1000) + 600 } });
     const m = await buildManifest(gh, ref, 'c2');
     await expect(buildBatch(gh, ref, m, 0)).rejects.toMatchObject({ code: 'rate-limited' });
+  });
+});
+
+/** One commit holding `count` files under src/, each path padded to about `pathLength` characters. */
+function oneWideCommit(count: number, pathLength = 12): FakeCommit[] {
+  const files: FakeCommit['files'] = {};
+  for (let i = 0; i < count; i++) files[`src/${String(i).padStart(pathLength, '0')}.ts`] = [`b${i}`, 100];
+  return [{ sha: 'wide', files }];
+}
+
+describe('batch size by head buildings (R32)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  test('a repo with more than 2,000 buildings gets 10 snapshots per batch', async () => {
+    const m = await buildManifest(createFakeGitHub({ commits: oneWideCommit(2001) }), ref, 'wide');
+    expect(m.batchSize).toBe(10);
+  });
+
+  test('counts buildings after merging, not files', async () => {
+    const m = await buildManifest(createFakeGitHub({ commits: oneWideCommit(2500) }), ref, 'wide', { maxBuildings: 1500 });
+    expect(m.mergePlan.length).toBeGreaterThan(0);
+    expect(m.batchSize).toBe(20);
+  });
+
+  test('warns once, server-side, when a batch serialises to more than 1.5 MB', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const gh = createFakeGitHub({ commits: oneWideCommit(12_000, 120) });
+    const m = await buildManifest(gh, ref, 'wide');
+    expect(m.batchSize).toBe(5);
+    const batch = await buildBatch(gh, ref, m, 0);
+    const bytes = JSON.stringify(batch).length;
+    expect(bytes).toBeGreaterThan(1_500_000);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith('[repolis] large batch', 'facebook/react', 0, bytes);
+  });
+
+  test('does not warn for an ordinary batch', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const gh = threeCommits();
+    await buildBatch(gh, ref, await buildManifest(gh, ref, 'c'), 0);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

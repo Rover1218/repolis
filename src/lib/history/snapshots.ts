@@ -1,7 +1,12 @@
 export const MAX_SNAPSHOTS = 200;
 export const COARSE_SNAPSHOTS = 30;
-export const BATCH_SIZE = 20;
 export const COARSE_BATCH_SIZE = 3;
+/** [max head buildings, snapshots per batch]: keeps batches well under the 2 MB Data Cache entry (R32). */
+const BATCH_SIZES: ReadonlyArray<readonly [maxBuildings: number, size: number]> = [
+  [2000, 20],
+  [8000, 10],
+];
+const LARGE_REPO_BATCH_SIZE = 5;
 
 /**
  * Picks up to `max` commit indices spread evenly across `total` commits.
@@ -26,4 +31,13 @@ export function batchCount(snapshots: number, batchSize: number): number {
 export function batchRange(batch: number, snapshots: number, batchSize: number): [start: number, end: number] {
   const start = batch * batchSize;
   return [start, Math.min(start + batchSize, snapshots)];
+}
+
+/** Snapshots per batch for a manifest, from the head's building count (after merging). */
+export function chooseBatchSize(buildings: number, mode: 'full' | 'coarse'): number {
+  if (mode === 'coarse') return COARSE_BATCH_SIZE;
+  for (const [maxBuildings, size] of BATCH_SIZES) {
+    if (buildings <= maxBuildings) return size;
+  }
+  return LARGE_REPO_BATCH_SIZE;
 }

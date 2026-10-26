@@ -5,19 +5,21 @@ import type { GitHub } from '@/lib/github/types';
 import type { RepoRef } from '@/lib/repo-ref';
 import { diffTrees, type TreeSnapshot } from './diff';
 import { MAX_BUILDINGS, applyMerge, ensureBudget, planMerge } from './merge';
+import { foldedFiles } from './merge-plan';
 import {
-  BATCH_SIZE,
-  COARSE_BATCH_SIZE,
   COARSE_SNAPSHOTS,
   MAX_SNAPSHOTS,
   batchCount,
   batchRange,
+  chooseBatchSize,
   pickSnapshotIndices,
   toRank,
 } from './snapshots';
 import type { CityManifest, LatestCity, MergePlan, SnapshotBatch, SnapshotDelta, SnapshotMeta } from './types';
 
 export const TREE_CONCURRENCY = 6;
+/** A batch this large (serialised) is logged: the Data Cache drops entries over 2 MB (R32). */
+export const LARGE_BATCH_BYTES = 1_500_000;
 
 export interface BuildOpts {
   /** Overrides MAX_BUILDINGS (for tests). */
@@ -54,6 +56,9 @@ export async function buildManifest(gh: GitHub, ref: RepoRef, headSha: string, o
   if (headCommit === undefined) throw new CityError('upstream');
   const { tree: headTree, requests, truncated } = await getFullTree(gh, ref, headCommit.treeSha);
 
+  const mode = truncated ? 'coarse' : 'full';
+  const mergePlan = planFor(headTree, opts);
+  const batchSize = chooseBatchSize(headTree.size - foldedFiles(mergePlan), mode);
   const commitIndices = pickSnapshotIndices(totalCommits, truncated ? COARSE_SNAPSHOTS : MAX_SNAPSHOTS);
   const ranks = commitIndices.map((i) => toRank(i, totalCommits));
   const commits = await gh.getCommitsAtRanks(ref, headSha, ranks);
@@ -75,10 +80,10 @@ export async function buildManifest(gh: GitHub, ref: RepoRef, headSha: string, o
     headSha,
     totalCommits,
     exact: snapshots.length === totalCommits,
-    mode: truncated ? 'coarse' : 'full',
-    batchSize: truncated ? COARSE_BATCH_SIZE : BATCH_SIZE,
+    mode,
+    batchSize,
     snapshots,
-    mergePlan: planFor(headTree, opts),
+    mergePlan,
     treeRequests: requests,
   };
 }
@@ -102,5 +107,12 @@ export async function buildBatch(gh: GitHub, ref: RepoRef, manifest: CityManifes
     const prev = index === 0 ? null : trees[index - 1 - first]!;
     deltas.push({ index, changes: diffTrees(prev, trees[index - first]!) });
   }
-  return { batch, deltas };
+  const result: SnapshotBatch = { batch, deltas };
+  warnIfLarge(manifest.fullName, result);
+  return result;
+}
+
+function warnIfLarge(fullName: string, batch: SnapshotBatch): void {
+  const bytes = JSON.stringify(batch).length;
+  if (bytes > LARGE_BATCH_BYTES) console.warn('[repolis] large batch', fullName, batch.batch, bytes);
 }
