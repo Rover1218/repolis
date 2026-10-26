@@ -9,6 +9,7 @@ const GITHUB_HTTP_PREFIX = /^(?:https?:\/\/)?(?:www\.)?github\.com\//i;
 const GITHUB_SSH_PREFIX = /^git@github\.com:/i;
 const ANY_URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 const GIT_SUFFIX = /\.git$/;
+const QUERY_OR_HASH = /[?#].*$/;
 
 export function isValidOwner(s: string): boolean {
   return OWNER_PATTERN.test(s);
@@ -26,7 +27,7 @@ function stripHostPrefix(path: string): string | null {
 }
 
 export function parseRepoInput(input: string): RepoRef | null {
-  const trimmed = input.trim();
+  const trimmed = input.trim().replace(QUERY_OR_HASH, '');
   const path = stripHostPrefix(trimmed);
   if (path === null) return null;
 
