@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { mockCityApi } from './mock-api';
 
 test.describe('home', () => {

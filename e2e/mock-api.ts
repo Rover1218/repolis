@@ -32,7 +32,8 @@ export async function mockCityApi(page: Page, options: MockOptions = {}): Promis
     if (rest.length === 2) return errors.latest ? fail(route, errors.latest) : ok(route, latest);
     if (rest[3] === 'manifest') return errors.manifest ? fail(route, errors.manifest) : ok(route, manifest);
     if (rest[3] === 'batch') return errors.batch ? fail(route, errors.batch) : ok(route, batch);
-    return route.fulfill({ status: 404, json: { ok: false, error: { code: 'not-found', message: 'unknown' } } });
+    // Anything else falls through to the guard in ./test.ts, which fails the test.
+    return route.fallback();
   });
 }
 

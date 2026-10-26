@@ -1,14 +1,19 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { oneCommitBatch, oneCommitLatest, oneCommitManifest } from './fixtures/one-commit';
 import { collectErrors, settleCity } from './helpers';
 import { mockCityApi } from './mock-api';
 
 const CITY = '/facebook/react';
+/**
+ * Dive in is a 2.2 s camera flight, but CityScene clamps each frame's dt to 0.1 s, so it
+ * needs >= 22 rendered frames. Measured on this machine with software WebGL (SwiftShader):
+ * 28 frames at 214-319 ms each = 6.0-8.9 s wall time from click to "Step out".
+ * 20 s is about 2x the slowest measurement.
+ */
+const DIVE_TIMEOUT_MS = 20_000;
 
 test.describe('city (small fixture)', () => {
   test('renders the canvas, the readout, hover and dive without console errors', async ({ page }) => {
-    // Dive is a camera flight stepped per frame; software WebGL under two workers can be slow.
-    test.setTimeout(120_000);
     const errors = collectErrors(page);
     await mockCityApi(page);
     await page.goto(CITY);
@@ -22,7 +27,9 @@ test.describe('city (small fixture)', () => {
     await expect(canvas).toBeVisible();
 
     await page.getByRole('button', { name: 'Dive in ↓' }).click();
-    await expect(page.getByRole('button', { name: 'Step out ↑' })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByRole('button', { name: 'Step out ↑' })).toBeVisible({
+      timeout: DIVE_TIMEOUT_MS,
+    });
 
     expect(errors).toEqual([]);
   });
@@ -72,10 +79,16 @@ test.describe('city (small fixture)', () => {
 });
 
 test.describe('city (one commit)', () => {
-  test('shows the all-at-once line', async ({ page }) => {
+  test('shows the all-at-once line with a canvas and no errors', async ({ page }) => {
+    const errors = collectErrors(page);
     await mockCityApi(page, { latest: oneCommitLatest, manifest: oneCommitManifest, batch: oneCommitBatch });
     await page.goto(CITY);
-    await expect(page.getByText('Pushed all at once · 1 commit · 12 Mar 2024')).toBeVisible();
+    const timeline = page.getByRole('region', { name: 'Timeline' });
+    await expect(timeline).toHaveText('Pushed all at once · 1 commit · 12 Mar 2024');
+    await expect(page.locator('canvas')).toBeVisible();
+    // A single snapshot has no player.
+    await expect(page.getByRole('slider', { name: 'Snapshot' })).toHaveCount(0);
+    expect(errors).toEqual([]);
   });
 });
 
@@ -117,6 +130,60 @@ test.describe('phone', () => {
   });
 });
 
+interface Box {
+  name: string;
+  x: number;
+  y: number;
+  right: number;
+  bottom: number;
+}
+
+const intersects = (a: Box, b: Box): boolean =>
+  a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
+
+test.describe('hud layout (R28)', () => {
+  test.skip(({ isMobile }) => isMobile, 'widths are set explicitly on the desktop project');
+
+  for (const width of [375, 768, 1440]) {
+    test(`panels do not overlap and the readout is not clipped at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await mockCityApi(page);
+      await page.goto(CITY);
+      await settleCity(page);
+      const timeline = page.getByRole('region', { name: 'Timeline' });
+      const dive = page.getByRole('navigation', { name: 'Camera' });
+      const share = page.getByRole('navigation', { name: 'Share' });
+      await expect(dive).toBeVisible();
+      await expect(share).toBeVisible();
+
+      const panels = {
+        brand: page.locator('header'),
+        timeline,
+        dive,
+        share,
+      };
+      const boxes: Box[] = [];
+      for (const [name, locator] of Object.entries(panels)) {
+        const b = await locator.boundingBox();
+        expect(b, name).not.toBeNull();
+        if (b) boxes.push({ name, x: b.x, y: b.y, right: b.x + b.width, bottom: b.y + b.height });
+      }
+      for (let i = 0; i < boxes.length; i += 1) {
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          expect(intersects(boxes[i], boxes[j]), `${boxes[i].name} overlaps ${boxes[j].name}`).toBe(false);
+        }
+      }
+      const [d, s] = [boxes[2], boxes[3]];
+      expect(s.y - d.bottom, 'gap between the Dive and Share panels').toBeGreaterThanOrEqual(8);
+      expect(boxes[1].y - s.bottom, 'gap between the Share panel and the timeline').toBeGreaterThanOrEqual(8);
+
+      const readout = timeline.locator('b').locator('..');
+      const clipped = await readout.evaluate((el) => el.scrollWidth > el.clientWidth);
+      expect(clipped, 'readout is clipped').toBe(false);
+    });
+  }
+});
+
 test.describe('visual', () => {
   test.skip(({ isMobile }) => isMobile, 'baselines are taken at explicit widths on the desktop project');
 
@@ -129,8 +196,10 @@ test.describe('visual', () => {
       await page.goto(CITY);
       await settleCity(page);
       await expect(page.getByRole('slider', { name: 'Snapshot' })).toHaveValue('2');
+      // The canvas fills the viewport, so masking it would blank the whole shot; hide the
+      // scene (and the labels that track it) instead and compare the HUD layout.
+      await page.addStyleTag({ content: 'canvas, [class*="__labels"] { visibility: hidden !important; }' });
       await expect(page).toHaveScreenshot(`city-${width}.png`, {
-        mask: [page.locator('canvas')],
         maxDiffPixelRatio: 0.02,
         animations: 'disabled',
       });
