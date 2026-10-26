@@ -64,12 +64,15 @@ describe('CameraRig flights', () => {
     expect(rig.isInside()).toBe(false);
   });
 
-  it('intro starts far out and ends at the overview', () => {
-    const { camera, rig } = setup();
+  it('intro starts farther out than the overview and ends at it', () => {
+    const { camera, controls, rig } = setup();
     rig.intro();
-    expect(camera.position.toArray()).toEqual([30, 24, 34]);
+    const overview = rig.overview();
+    const startDistance = camera.position.distanceTo(overview.target);
+    expect(startDistance).toBeGreaterThan(overview.pos.distanceTo(overview.target) * 1.5);
+    expect(controls.target.distanceTo(overview.target)).toBeLessThan(1e-9);
     rig.update(3);
-    expect(camera.position.distanceTo(rig.overview().pos)).toBeLessThan(1e-6);
+    expect(camera.position.distanceTo(overview.pos)).toBeLessThan(1e-6);
   });
 
   it('flies to a building at street height', () => {
@@ -90,6 +93,55 @@ describe('CameraRig flights', () => {
     rig.update(1);
     expect(camera.position.distanceTo(frozen)).toBe(0);
     expect(controls.enabled).toBe(true);
+  });
+});
+
+describe('CameraRig overview framing (R29)', () => {
+  const distance = (rig: CameraRig): number => {
+    const { pos, target } = rig.overview();
+    return pos.distanceTo(target);
+  };
+  const horizontalHalfFov = (camera: THREE.PerspectiveCamera, aspect: number): number =>
+    Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * aspect);
+
+  it('pulls back for a portrait aspect', () => {
+    const { rig } = setup();
+    rig.setAspect(1.6);
+    const wide = distance(rig);
+    rig.setAspect(0.46);
+    expect(distance(rig)).toBeGreaterThan(wide);
+  });
+
+  it('fits the bounding circle inside the horizontal FOV at aspect 0.46', () => {
+    const { camera, rig } = setup();
+    camera.fov = 50;
+    rig.setAspect(0.46);
+    const half = horizontalHalfFov(camera, 0.46);
+    expect(distance(rig) * Math.sin(half)).toBeGreaterThanOrEqual(BOUNDS.radius + 2 - 1e-6);
+  });
+
+  it('fits the bounding circle inside the vertical FOV on a wide screen', () => {
+    const { camera, rig } = setup();
+    camera.fov = 50;
+    rig.setAspect(1.6);
+    const half = THREE.MathUtils.degToRad(camera.fov) / 2;
+    expect(distance(rig) * Math.sin(half)).toBeGreaterThanOrEqual(BOUNDS.radius + 2 - 1e-6);
+  });
+
+  it('keeps the prototype direction and target', () => {
+    const { rig } = setup();
+    rig.setAspect(0.46);
+    const { pos, target } = rig.overview();
+    expect(target.toArray()).toEqual([0, -BOUNDS.radius * 0.12, 0]);
+    const dir = pos.clone().sub(target).normalize();
+    const proto = new THREE.Vector3(1.25, 0.95, 1.45).normalize();
+    expect(dir.distanceTo(proto)).toBeLessThan(1e-9);
+  });
+
+  it('exposes the fit distance for the controls limit', () => {
+    const { rig } = setup();
+    rig.setAspect(0.46);
+    expect(rig.fitDistance()).toBeCloseTo(distance(rig), 9);
   });
 });
 

@@ -47,6 +47,12 @@ const WALK_SPEED_MIN = 2.5;
 const WALK_SPEED_MAX = 20;
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_PX = 20;
+/** The prototype's overview direction, normalised on first use. */
+const OVERVIEW_DIRECTION = new THREE.Vector3(1.25, 0.95, 1.45).normalize();
+/** The framed circle is the stage disc plus a little breathing room. */
+const FIT_MARGIN = 2;
+/** The intro starts this many times farther out than the overview. */
+const INTRO_DISTANCE_FACTOR = 2.4;
 const WALK_KEYS = ['w', 'a', 's', 'd', 'q', 'e'];
 
 const easeInOutCubic = (t: number): number =>
@@ -59,6 +65,7 @@ export function isDoubleTap(prev: TapSample | null, next: TapSample): boolean {
 
 export class CameraRig {
   private bounds: RigBounds = { radius: 10, halfWidth: 5, streetZ: 0 };
+  private aspect = 1;
   private flight: Flight | null = null;
   private readonly forward = new THREE.Vector3();
   private readonly right = new THREE.Vector3();
@@ -74,12 +81,22 @@ export class CameraRig {
     this.bounds = { ...b };
   }
 
+  /** The viewport's width / height; the overview distance fits the city to both FOVs. */
+  setAspect(aspect: number): void {
+    if (Number.isFinite(aspect) && aspect > 0) this.aspect = aspect;
+  }
+
+  /** Distance from the overview target at which the stage disc fits both FOVs. */
+  fitDistance(): number {
+    const vFov = THREE.MathUtils.degToRad(this.camera.fov);
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.aspect);
+    return (this.bounds.radius + FIT_MARGIN) / Math.sin(Math.min(vFov, hFov) / 2);
+  }
+
   overview(): Pose {
-    const r = this.bounds.radius;
-    return {
-      pos: new THREE.Vector3(r * 1.25, r * 0.95, r * 1.45),
-      target: new THREE.Vector3(0, -r * 0.12, 0),
-    };
+    const target = new THREE.Vector3(0, -this.bounds.radius * 0.12, 0);
+    const pos = OVERVIEW_DIRECTION.clone().multiplyScalar(this.fitDistance()).add(target);
+    return { pos, target };
   }
 
   street(): Pose {
@@ -91,9 +108,8 @@ export class CameraRig {
   }
 
   intro(): void {
-    const r = this.bounds.radius;
     const end = this.overview();
-    this.camera.position.set(r * 3, r * 2.4, r * 3.4);
+    this.camera.position.copy(end.pos).sub(end.target).multiplyScalar(INTRO_DISTANCE_FACTOR).add(end.target);
     this.controls.target.copy(end.target);
     this.flyTo(end, INTRO_SECONDS);
   }

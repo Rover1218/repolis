@@ -44,6 +44,8 @@ const MIN_DISTANCE = 0.4;
 const MAX_DISTANCE_PER_RADIUS = 5;
 /** Tiny repos still get a stage big enough for the projector base and a tall tower. */
 const MIN_SCENE_RADIUS = 6;
+/** The orbit limit stays this far beyond the fitted overview distance. */
+const FIT_MAX_SLACK = 1.5;
 const MAX_FRAME_DT = 0.1;
 const MIN_TOP = 0.1;
 const DISTRICT_LABEL_LIFT = 0.7;
@@ -123,6 +125,7 @@ export class CityScene {
   private width = 0;
   private height = 0;
   private introduced = false;
+  private sceneRadius = MIN_SCENE_RADIUS;
   private disposed = false;
 
   constructor(canvas: HTMLCanvasElement, opts: CitySceneOptions) {
@@ -168,10 +171,11 @@ export class CityScene {
     this.lights = this.swap(this.lights, createLights(radius, this.quality));
     this.scene.add(this.city.mesh);
 
-    this.controls.maxDistance = radius * MAX_DISTANCE_PER_RADIUS;
     this.camera.far = Math.max(FAR, radius * FAR_PER_RADIUS);
     this.camera.updateProjectionMatrix();
     this.rig.setBounds({ radius, halfWidth: layout.halfWidth, streetZ: layout.streetZ });
+    this.sceneRadius = radius;
+    this.fitCameraToAspect();
 
     this.layout = layout;
     this.buildLabels(layout);
@@ -343,6 +347,14 @@ export class CityScene {
     this.composer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.fitCameraToAspect();
+  }
+
+  /** The overview must fit the viewport (R29), and the orbit limit must not pull it back in. */
+  private fitCameraToAspect(): void {
+    this.rig.setAspect(this.camera.aspect);
+    const fit = this.rig.fitDistance();
+    this.controls.maxDistance = Math.max(this.sceneRadius * MAX_DISTANCE_PER_RADIUS, fit * FIT_MAX_SLACK);
   }
 
   /** Raycasts at most once per frame, only when the pointer, camera or city changed. */
