@@ -7,6 +7,8 @@ import { getGitHub } from './github-instance';
 import { BUILD_LIMIT, LATEST_LIMIT, createLimiter } from './limiter';
 
 const LATEST_REVALIDATE_SECONDS = 3600;
+/** Bump when a cached payload's shape changes, so old Data Cache entries are never read back. */
+const CACHE_SCHEMA = 'v1';
 
 const buildLimiter = createLimiter(BUILD_LIMIT);
 const latestLimiter = createLimiter(LATEST_LIMIT);
@@ -23,7 +25,7 @@ function enforce(limiter: ReturnType<typeof createLimiter>, clientKey: string): 
 /** The limit applies on cache misses only. */
 export function getLatestCity(ref: RepoRef, clientKey: string): Promise<LatestCity> {
   const [o, r] = lower(ref);
-  return cached(['latest', o, r], LATEST_REVALIDATE_SECONDS, async () => {
+  return cached(['latest', CACHE_SCHEMA, o, r], LATEST_REVALIDATE_SECONDS, async () => {
     enforce(latestLimiter, clientKey);
     return buildLatest(getGitHub(), ref);
   });
@@ -33,7 +35,7 @@ export function getLatestCity(ref: RepoRef, clientKey: string): Promise<LatestCi
 export function getManifest(ref: RepoRef, headSha: string, clientKey: string): Promise<CityManifest> {
   const [o, r] = lower(ref);
   const head = headSha.toLowerCase();
-  return cached(['manifest', o, r, head], false, async () => {
+  return cached(['manifest', CACHE_SCHEMA, o, r, head], false, async () => {
     const latest = await getLatestCity(ref, clientKey);
     if (head !== latest.headSha.toLowerCase()) throw new CityError('upstream');
     enforce(buildLimiter, clientKey);
@@ -51,5 +53,5 @@ export async function getBatch(ref: RepoRef, headSha: string, batch: number, cli
   const head = headSha.toLowerCase();
   const manifest = await getManifest(ref, head, clientKey);
   const canonical = canonicalRef(manifest.fullName, ref);
-  return cached(['batch', o, r, head, String(batch)], false, () => buildBatch(getGitHub(), canonical, manifest, batch));
+  return cached(['batch', CACHE_SCHEMA, o, r, head, String(batch)], false, () => buildBatch(getGitHub(), canonical, manifest, batch));
 }

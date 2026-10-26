@@ -89,15 +89,15 @@ describe('GET /api/city/{owner}/{repo}', () => {
 });
 
 describe('cache keys', () => {
-  test('latest key is lower-cased', async () => {
+  test('latest key is versioned and lower-cased', async () => {
     await getLatestCity({ owner: 'Facebook', repo: 'React' }, 'k').catch(() => undefined);
-    expect(capturedKeys).toContainEqual(['latest', 'facebook', 'react']);
+    expect(capturedKeys).toContainEqual(['latest', 'v1', 'facebook', 'react']);
   });
 
-  test('manifest and batch keys are lower-cased', async () => {
+  test('manifest and batch keys are versioned and lower-cased', async () => {
     await getBatch(req(), ctx({ owner: 'Facebook', repo: 'React', head: HEAD.toUpperCase(), k: '0' }));
-    expect(capturedKeys).toContainEqual(['manifest', 'facebook', 'react', HEAD]);
-    expect(capturedKeys).toContainEqual(['batch', 'facebook', 'react', HEAD, '0']);
+    expect(capturedKeys).toContainEqual(['manifest', 'v1', 'facebook', 'react', HEAD]);
+    expect(capturedKeys).toContainEqual(['batch', 'v1', 'facebook', 'react', HEAD, '0']);
   });
 });
 
