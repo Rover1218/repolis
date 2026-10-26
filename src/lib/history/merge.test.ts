@@ -62,3 +62,53 @@ describe('applyMerge', () => {
     expect(applyMerge(make('X2'), plan).get('a/+small')!.sha).not.toBe(a);
   });
 });
+
+const distinctBuildings = (files: Array<[string, number]>, plan: Parameters<typeof mergedPath>[1]): number =>
+  new Set(files.map(([p]) => mergedPath(p, plan))).size;
+
+describe('planMerge subtree fallback', () => {
+  const wide = (): Array<[string, number]> => {
+    const files: Array<[string, number]> = [];
+    for (let i = 0; i < 12000; i++) for (let j = 0; j < 8; j++) files.push([`g${i % 100}/d${i}/f${j}.ts`, j + 1]);
+    return files;
+  };
+
+  test('12k folders x 8 files still end at or under the max', () => {
+    const files = wide();
+    const start = Date.now();
+    const plan = planMerge(files, 20000);
+    const buildings = distinctBuildings(files, plan);
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(buildings).toBeLessThanOrEqual(20000);
+    expect(plan.length).toBeGreaterThan(0);
+    expect(plan.every((p) => p.subtree === true)).toBe(true);
+    expect(plan.every((p) => p.folder.split('/').length === 1)).toBe(true);
+  });
+
+  test('a deep tree that only converges at the root yields a single root entry', () => {
+    const files: Array<[string, number]> = [];
+    for (const top of ['a', 'b']) for (let i = 0; i < 30; i++) for (let j = 0; j < 8; j++) files.push([`${top}/s${i}/t/f${j}.ts`, j + 1]);
+    const plan = planMerge(files, 10);
+    expect(plan).toHaveLength(1);
+    expect(plan[0]!.folder).toBe('');
+    expect(plan[0]!.subtree).toBe(true);
+    expect(distinctBuildings(files, plan)).toBeLessThanOrEqual(10);
+  });
+
+  test('mergedPath maps descendants of a subtree prefix and keeps kept paths', () => {
+    const plan = [{ folder: 'a', keep: ['a/b/keep.ts'], count: 3, subtree: true }];
+    expect(mergedPath('a/b/c/x.ts', plan)).toBe('a/+small');
+    expect(mergedPath('a/y.ts', plan)).toBe('a/+small');
+    expect(mergedPath('a/b/keep.ts', plan)).toBe('a/b/keep.ts');
+    expect(mergedPath('z/x.ts', plan)).toBe('z/x.ts');
+    expect(mergedPath('top.ts', plan)).toBe('top.ts');
+  });
+
+  test('100k paths plan and map quickly', () => {
+    const files: Array<[string, number]> = Array.from({ length: 100000 }, (_, i) => [`p${i % 50}/q${i % 997}/f${i}.ts`, i % 13]);
+    const start = Date.now();
+    const plan = planMerge(files, 20000);
+    for (const [p] of files) mergedPath(p, plan);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+});

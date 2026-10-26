@@ -18,53 +18,105 @@ const smallPath = (folder: string): string => (folder === '' ? SMALL_NAME : `${f
 
 const compareStrings = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-/**
- * Plans which small files to fold into one "+small" block per folder. Folders are taken by file
- * count (largest first); each keeps its `keep` largest files. Stops once buildings <= `max`.
- */
-export function planMerge(files: Array<[string, number]>, max: number = MAX_BUILDINGS, keep: number = KEEP_PER_FOLDER): MergePlan {
-  let buildings = files.length;
-  if (buildings <= max) return [];
-  const byFolder = new Map<string, Array<[string, number]>>();
-  for (const f of files) {
-    const folder = parentFolder(f[0]);
-    const list = byFolder.get(folder);
-    if (list) list.push(f);
-    else byFolder.set(folder, [f]);
+/** Number of folder segments in a folder path ('' = 0). */
+const depthOf = (folder: string): number => (folder === '' ? 0 : folder.split('/').length);
+
+/** The first d folder segments of a path, or null when the file sits shallower than that. */
+function ancestorPrefix(path: string, d: number): string | null {
+  let end = -1;
+  for (let i = 0; i < d; i++) {
+    end = path.indexOf('/', end + 1);
+    if (end < 0) return null;
   }
-  const folders = [...byFolder].sort((a, b) => b[1].length - a[1].length || compareStrings(a[0], b[0]));
+  return d === 0 ? '' : path.slice(0, end);
+}
+
+function keepLargest(list: Array<[string, number]>, keep: number): string[] {
+  return list
+    .slice()
+    .sort((a, b) => b[1] - a[1] || compareStrings(a[0], b[0]))
+    .slice(0, keep)
+    .map(([p]) => p);
+}
+
+function groupBy(files: Array<[string, number]>, keyOf: (path: string) => string | null): Array<[string, Array<[string, number]>]> {
+  const groups = new Map<string, Array<[string, number]>>();
+  for (const f of files) {
+    const key = keyOf(f[0]);
+    if (key === null) continue;
+    const list = groups.get(key);
+    if (list) list.push(f);
+    else groups.set(key, [f]);
+  }
+  return [...groups].sort((a, b) => b[1].length - a[1].length || compareStrings(a[0], b[0]));
+}
+
+/** Merges within groups (largest first) until buildings <= max; returns the plan and the new count. */
+function planGroups(
+  groups: Array<[string, Array<[string, number]>]>,
+  start: number,
+  max: number,
+  keep: number,
+  subtree: boolean,
+): { plan: MergePlan; buildings: number } {
+  let buildings = start;
   const plan: MergePlan = [];
-  for (const [folder, list] of folders) {
+  for (const [folder, list] of groups) {
     if (buildings <= max) break;
     const merged = list.length - keep;
     if (merged <= 1) continue;
-    const kept = list
-      .slice()
-      .sort((a, b) => b[1] - a[1] || compareStrings(a[0], b[0]))
-      .slice(0, keep)
-      .map(([p]) => p);
-    plan.push({ folder, keep: kept, count: merged });
+    plan.push(subtree ? { folder, keep: keepLargest(list, keep), count: merged, subtree } : { folder, keep: keepLargest(list, keep), count: merged });
     buildings -= merged - 1;
   }
-  return plan;
+  return { plan, buildings };
 }
 
-const lookupCache = new WeakMap<MergePlan, Map<string, Set<string>>>();
+/**
+ * Plans which small files to fold into one "+small" block. First pass: per parent folder (largest
+ * first), each keeping its largest files. If that cannot reach the max (many tiny folders),
+ * falls back to merging whole subtrees at the deepest ancestor depth that converges, down to the root.
+ */
+export function planMerge(files: Array<[string, number]>, max: number = MAX_BUILDINGS, keep: number = KEEP_PER_FOLDER): MergePlan {
+  if (files.length <= max) return [];
+  const perFolder = planGroups(groupBy(files, parentFolder), files.length, max, keep, false);
+  if (perFolder.buildings <= max) return perFolder.plan;
 
-function lookup(plan: MergePlan): Map<string, Set<string>> {
+  let deepest = 0;
+  for (const [path] of files) deepest = Math.max(deepest, depthOf(parentFolder(path)));
+  for (let d = Math.max(deepest - 1, 0); d >= 0; d--) {
+    const result = planGroups(groupBy(files, (p) => ancestorPrefix(p, d)), files.length, max, keep, true);
+    if (result.buildings <= max || d === 0) return result.plan;
+  }
+  return [];
+}
+
+interface PlanLookup {
+  subtreeDepth: number | null;
+  keeps: Map<string, Set<string>>;
+}
+
+const lookupCache = new WeakMap<MergePlan, PlanLookup>();
+
+function lookup(plan: MergePlan): PlanLookup {
   let m = lookupCache.get(plan);
   if (m === undefined) {
-    m = new Map(plan.map((p) => [p.folder, new Set(p.keep)]));
+    const first = plan[0];
+    m = {
+      subtreeDepth: first?.subtree === true ? depthOf(first.folder) : null,
+      keeps: new Map(plan.map((p) => [p.folder, new Set(p.keep)])),
+    };
     lookupCache.set(plan, m);
   }
   return m;
 }
 
-/** The path itself, or its folder's "+small" block when the folder is planned and the file is not kept. */
+/** The path itself, or its block's "+small" path when it is merged by the plan. */
 export function mergedPath(path: string, plan: MergePlan): string {
   if (plan.length === 0) return path;
-  const folder = parentFolder(path);
-  const keep = lookup(plan).get(folder);
+  const { subtreeDepth, keeps } = lookup(plan);
+  const folder = subtreeDepth === null ? parentFolder(path) : ancestorPrefix(path, subtreeDepth);
+  if (folder === null) return path;
+  const keep = keeps.get(folder);
   return keep === undefined || keep.has(path) ? path : smallPath(folder);
 }
 
