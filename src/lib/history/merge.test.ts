@@ -111,4 +111,19 @@ describe('planMerge subtree fallback', () => {
     for (const [p] of files) mergedPath(p, plan);
     expect(Date.now() - start).toBeLessThan(1000);
   });
+
+  test('very deep paths only fall back to ancestors of at most 16 segments, quickly', () => {
+    const files: Array<[string, number]> = [];
+    for (let i = 0; i < 20000; i++) {
+      const g = i % 200;
+      files.push([`g${g}/${'x/'.repeat(29)}l${i}/${'y/'.repeat(168)}f.ts`, i % 7]);
+    }
+    const start = Date.now();
+    const plan = planMerge(files, 4000);
+    const buildings = distinctBuildings(files, plan);
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(buildings).toBeLessThanOrEqual(4000);
+    expect(plan.length).toBeGreaterThan(0);
+    expect(plan.every((p) => p.folder === '' || p.folder.split('/').length <= 16)).toBe(true);
+  });
 });

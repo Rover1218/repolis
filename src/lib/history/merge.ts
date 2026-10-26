@@ -7,6 +7,8 @@ import type { MergePlan } from './types';
 export const MAX_BUILDINGS = 20000;
 export const KEEP_PER_FOLDER = 8;
 export const GITHUB_RESERVE = 300;
+/** Deepest ancestor depth the subtree fallback groups by; bounds work on hostile deep paths. */
+export const MAX_FALLBACK_DEPTH = 16;
 const SMALL_NAME = '+small';
 
 function parentFolder(path: string): string {
@@ -83,7 +85,7 @@ export function planMerge(files: Array<[string, number]>, max: number = MAX_BUIL
 
   let deepest = 0;
   for (const [path] of files) deepest = Math.max(deepest, depthOf(parentFolder(path)));
-  for (let d = Math.max(deepest - 1, 0); d >= 0; d--) {
+  for (let d = Math.min(Math.max(deepest - 1, 0), MAX_FALLBACK_DEPTH); d >= 0; d--) {
     const result = planGroups(groupBy(files, (p) => ancestorPrefix(p, d)), files.length, max, keep, true);
     if (result.buildings <= max || d === 0) return result.plan;
   }
