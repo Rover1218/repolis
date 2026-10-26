@@ -8,7 +8,7 @@ const eslintConfig = defineConfig([
   {
     files: ["scripts/**/*.mjs"],
     languageOptions: {
-      globals: { process: "readonly", console: "readonly", fetch: "readonly", performance: "readonly", URL: "readonly" },
+      globals: { process: "readonly", console: "readonly", fetch: "readonly", performance: "readonly", URL: "readonly", AbortSignal: "readonly" },
     },
   },
   // Override default ignores of eslint-config-next.

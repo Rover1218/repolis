@@ -29,6 +29,17 @@ if (!token) {
   process.exit(2);
 }
 
+const TIMEOUT_MS = 30_000;
+
+async function timedFetch(url, init) {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') throw new Error(`timed out after 30 seconds: ${url}`);
+    throw err;
+  }
+}
+
 const headers = {
   Authorization: `Bearer ${token}`,
   'User-Agent': 'repolis',
@@ -36,7 +47,7 @@ const headers = {
 };
 
 async function graphql(query) {
-  const res = await fetch('https://api.github.com/graphql', {
+  const res = await timedFetch('https://api.github.com/graphql', {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -48,7 +59,7 @@ async function graphql(query) {
 
 async function restSha(head, rank) {
   const url = `https://api.github.com/repos/${OWNER}/${REPO}/commits?sha=${head}&per_page=1&page=${rank + 1}`;
-  const res = await fetch(url, { headers });
+  const res = await timedFetch(url, { headers });
   if (!res.ok) throw new Error(`REST failed for rank ${rank}: ${res.status}`);
   const list = await res.json();
   return list[0]?.sha ?? null;

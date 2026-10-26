@@ -12,8 +12,16 @@ if (!base) {
 
 const examples = JSON.parse(readFileSync(new URL('../src/lib/examples.json', import.meta.url), 'utf8'));
 
+const TIMEOUT_MS = 5 * 60_000;
+
 async function getData(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': 'repolis-warm' } });
+  let res;
+  try {
+    res = await fetch(url, { headers: { 'User-Agent': 'repolis-warm' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') throw new Error(`timed out after 5 minutes: ${url}`);
+    throw err;
+  }
   let body = null;
   try {
     body = await res.json();

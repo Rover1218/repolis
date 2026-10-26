@@ -24,7 +24,7 @@ Requires Node 22+.
 
 ```bash
 npm install
-cp .env.example .env.local   # then set GITHUB_TOKEN
+cp .env.example .env.local   # then set GITHUB_TOKEN (or copy the file manually on Windows)
 npm run dev
 ```
 
