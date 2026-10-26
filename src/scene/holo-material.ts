@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { SOLID_LIGHT } from './style';
 
 // Hologram effects are injected into MeshStandardMaterial so buildings keep real lighting + shadows.
-// Shader strings are ported verbatim from the look prototype (L250–297).
+// Shader strings are ported from the look prototype (L250–297); the heat term is halved to 0.7 (R36).
 const HOLO_DECLS = /* glsl */ `
   uniform float uTime;
   uniform int uStyle;
@@ -47,7 +47,7 @@ const HOLO_EMISSIVE = /* glsl */ `
       float slice = smoothstep(0.88, 1.0, fract(vWPos.y * 2.5)) * (1.0 - isRoof);
       glow = slice * 1.5 + edge * 1.0 + fres * 0.2 + sweep * 0.4;
     }
-    totalEmissiveRadiance += (tint * glow + uHot * vHeat * 1.4) * (1.0 - 0.5 * glitch);
+    totalEmissiveRadiance += (tint * glow + uHot * vHeat * 0.7) * (1.0 - 0.5 * glitch);
   }`;
 
 export type HoloUniforms = {

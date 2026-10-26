@@ -38,6 +38,11 @@ describe('createBuildingMaterial', () => {
     expect(shader.fragmentShader).toContain('uniform float uTop;');
   });
 
+  it('keeps the change heat glow at 0.7 so small repos do not wash out (R36)', () => {
+    const shader = compile(createBuildingMaterial(createHoloUniforms()));
+    expect(shader.fragmentShader).toContain('uHot * vHeat * 0.7');
+  });
+
   it('shares the uniform objects so per-frame updates reach the shader', () => {
     const u = createHoloUniforms();
     const shader = compile(createBuildingMaterial(u));

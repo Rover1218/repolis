@@ -209,63 +209,94 @@ describe('frame loop outputs', () => {
   });
 });
 
-describe('heat fades when the replay is not playing (R30)', () => {
+describe('heat (R36)', () => {
   const lastHeat = () => Array.from((scene.setFrame.mock.lastCall as [Float32Array, Float32Array])[1]);
+  const heatOf = (replay: ReplayCity, s: number) => Array.from(replay.history.heatAt(s));
 
-  /** Plays to the end with 0.1 s frames; returns when playback has stopped. */
+  /** Plays with 0.1 s frames until playback stops. */
   function playToEnd(director: CityDirector, l: ReturnType<typeof listener>) {
     for (let i = 0; i < 400 && l.onUi.mock.lastCall?.[0].playing !== false; i += 1) director.tick(0.1);
   }
 
-  it('passes the snapshot heat through while playing', () => {
-    const director = new CityDirector(scene, true);
-    const l = listener();
-    director.listen(l);
-    const replay = replayOf();
-    director.playReplay(replay);
-    director.togglePlay(); // reduced motion starts paused at the end; restart from 0
-    expect(l.onUi).toHaveBeenLastCalledWith({ index: 0, playing: true, inside: false });
-    director.tick(0.05);
-    expect(lastHeat()).toEqual(Array.from(replay.history.heatAt(0)));
-    expect(lastHeat().some((h) => h > 0)).toBe(true);
-  });
-
-  it('fades heat to zero within 1.5 s after the replay ends', () => {
+  it('shows no heat on construction snapshots, including snapshot 0 where everything is new', () => {
     const director = new CityDirector(scene, false);
-    const l = listener();
-    director.listen(l);
-    director.playReplay(replayOf());
-    playToEnd(director, l);
-    expect(l.onUi).toHaveBeenLastCalledWith({ index: 2, playing: false, inside: false });
-    // A construction wave can still be running on the last snapshot: full heat until it is over.
-    expect(Math.max(...lastHeat())).toBe(1);
-    for (let i = 0; i < 80 && Math.max(...lastHeat()) === 1; i += 1) director.tick(0.1);
-    const fadeStart = Math.max(...lastHeat());
-    expect(fadeStart).toBeLessThan(1);
-    expect(fadeStart).toBeGreaterThan(0);
-    ticks(director, 15); // 1.5 s of simulated time
+    director.listen(listener());
+    const replay = replayOf(WAVE_AT_TWO);
+    expect(heatOf(replay, 0).some((h) => h > 0)).toBe(true);
+    expect(heatOf(replay, 2).some((h) => h > 0)).toBe(true);
+    director.playReplay(replay);
+    expect(lastHeat().every((h) => h === 0)).toBe(true);
+    director.seek(2);
+    ticks(director, 5);
     expect(lastHeat().every((h) => h === 0)).toBe(true);
   });
 
-  it('restores the snapshot heat when play resumes', () => {
+  it('passes the snapshot heat through while playing', () => {
     const director = new CityDirector(scene, false);
     const l = listener();
     director.listen(l);
-    const replay = replayOf();
+    const replay = replayOf(WAVE_AT_TWO); // 4 snapshots: 1/3 per second
+    director.playReplay(replay);
+    ticks(director, 31);
+    expect(l.onUi).toHaveBeenLastCalledWith({ index: 1, playing: true, inside: false });
+    expect(lastHeat()).toEqual(heatOf(replay, 1));
+  });
+
+  it('a paused mid-replay frame keeps that snapshot heat', () => {
+    const director = new CityDirector(scene, false);
+    const l = listener();
+    director.listen(l);
+    const replay = replayOf(WAVE_AT_TWO);
     director.playReplay(replay);
     director.seek(1);
-    ticks(director, 20);
-    expect(lastHeat().every((h) => h === 0)).toBe(true);
+    ticks(director, 30); // 3 s paused
+    expect(l.onUi).toHaveBeenLastCalledWith({ index: 1, playing: false, inside: false });
+    expect(lastHeat()).toEqual(heatOf(replay, 1));
+    expect(lastHeat().some((h) => h > 0)).toBe(true);
     director.togglePlay();
-    director.tick(0.01);
-    expect(lastHeat()).toEqual(Array.from(replay.history.heatAt(1)));
+    director.togglePlay(); // pausing again changes nothing
+    ticks(director, 30);
+    expect(lastHeat()).toEqual(heatOf(replay, 1));
   });
 
-  it('shows no heat after a seek on a paused replay', () => {
-    const director = new CityDirector(scene, true);
-    director.listen(listener());
-    director.playReplay(replayOf());
-    director.seek(0);
+  it('fades heat to zero within 1.5 s once the replay has ended at the last snapshot', () => {
+    const director = new CityDirector(scene, false);
+    const l = listener();
+    director.listen(l);
+    const replay = replayOf(WAVE_AT_TWO);
+    playToEndOf(director, l, replay);
+    const peak = Math.max(...heatOf(replay, 3));
+    const fading = Math.max(...lastHeat());
+    expect(fading).toBeGreaterThan(0);
+    expect(fading).toBeLessThan(peak);
+    ticks(director, 15); // 1.5 s
     expect(lastHeat().every((h) => h === 0)).toBe(true);
   });
+
+  it('seeking back from the end restores that snapshot heat at once; seeking to the end does not', () => {
+    const director = new CityDirector(scene, false);
+    const l = listener();
+    director.listen(l);
+    const replay = replayOf(WAVE_AT_TWO);
+    playToEndOf(director, l, replay);
+    ticks(director, 20);
+    director.seek(3);
+    expect(lastHeat().every((h) => h === 0)).toBe(true);
+    director.seek(1);
+    expect(lastHeat()).toEqual(heatOf(replay, 1));
+  });
+
+  it('reduced motion starts at rest at the end, with no heat', () => {
+    const director = new CityDirector(scene, true);
+    director.listen(listener());
+    director.playReplay(replayOf(WAVE_AT_TWO));
+    expect(lastHeat().every((h) => h === 0)).toBe(true);
+  });
+
+  /** Plays `replay` to its end and checks it stopped on the last snapshot. */
+  function playToEndOf(director: CityDirector, l: ReturnType<typeof listener>, replay: ReplayCity) {
+    director.playReplay(replay);
+    playToEnd(director, l);
+    expect(l.onUi).toHaveBeenLastCalledWith({ index: 3, playing: false, inside: false });
+  }
 });

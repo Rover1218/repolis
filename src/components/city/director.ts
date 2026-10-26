@@ -43,7 +43,7 @@ export interface DirectorListener {
 /** Playback never jumps more than this per frame, e.g. when a background tab wakes up. */
 const MAX_PLAYBACK_DT = 0.1;
 
-/** Heat glow washes small repos out to white, so it shows only while the replay plays (R30). */
+/** Once the replay has ended at the last snapshot, its change glow eases out over this long (R36). */
 export const HEAT_FADE_SECONDS = 1.5;
 const HEAT_EPSILON = 1e-3;
 
@@ -59,7 +59,7 @@ export class CityDirector {
   private hasCity = false;
   private waveLeft = 0;
   private frame: { heights: Float32Array; heat: Float32Array } | null = null;
-  /** 1 while playing (or holding for a construction wave), fading to 0 when not. */
+  /** 1 during the replay; eases to 0 once it has ended at the last snapshot. */
   private heatScale = 0;
 
   constructor(
@@ -105,7 +105,8 @@ export class CityDirector {
     this.hasCity = true;
     this.scene.setLayout(replay.layout);
     this.state = startReplay(replay.history.snapshots.length, this.reducedMotion, this.isConstruction);
-    this.heatScale = this.isHeating() ? 1 : 0;
+    // Reduced motion starts at rest on the last snapshot: nothing to fade from.
+    this.heatScale = this.hasEnded() ? 0 : 1;
     this.showSnapshot(this.state.playback.index, true);
     this.publish();
   }
@@ -117,6 +118,8 @@ export class CityDirector {
     const target = Math.min(Math.max(0, Math.round(index)), last);
     if (this.waveLeft > 0) this.startWave(new Float32Array(replay.layout.paths.length), 0);
     this.state = { playback: { index: target, playing: false, carry: 0 }, hold: 0 };
+    // A scrubbed mid-replay frame shows its heat; scrubbing to the end keeps the current fade.
+    if (!this.hasEnded()) this.heatScale = 1;
     this.showSnapshot(target, false);
     this.publish();
   }
@@ -130,6 +133,7 @@ export class CityDirector {
       this.state = { playback: { ...playback, playing: false }, hold: this.state.hold };
     } else if (playback.index >= count - 1) {
       this.state = startReplay(count, false, this.isConstruction);
+      this.heatScale = 1;
       this.showSnapshot(0, true);
     } else {
       this.state = { playback: { ...playback, playing: true }, hold: this.state.hold };
@@ -183,18 +187,27 @@ export class CityDirector {
     if (byPlayback && this.isConstruction(s)) {
       this.startWave(waveDelays(layout, sizes, s > 0 ? history.sizesAt(s - 1) : null));
     }
-    this.frame = { heights: sizes.map(heightFor), heat: history.heatAt(s) };
+    const heat = this.isHeatless(s) ? new Float32Array(sizes.length) : history.heatAt(s);
+    this.frame = { heights: sizes.map(heightFor), heat };
     this.pushFrame();
   }
 
-  private isHeating(): boolean {
-    return this.state.playback.playing || this.waveLeft > 0;
+  /** Every building is new on snapshot 0 and on a construction snapshot, so heat would wash the city out (R36). */
+  private isHeatless(s: number): boolean {
+    return s === 0 || (this.replay?.history.constructionSnapshots.has(s) ?? false);
   }
 
-  /** Playing restores the heat at once; otherwise it eases out over HEAT_FADE_SECONDS. */
+  /** Stopped on the last snapshot: by playing to the end, scrubbing there, or reduced motion. */
+  private hasEnded(): boolean {
+    const count = this.replay?.history.snapshots.length ?? 0;
+    const { index, playing } = this.state.playback;
+    return count > 0 && !playing && index >= count - 1;
+  }
+
+  /** Heat holds during the replay and eases out over HEAT_FADE_SECONDS once it has ended. */
   private fadeHeat(dt: number): void {
     if (!this.replay) return;
-    const next = this.isHeating() ? 1 : Math.max(0, this.heatScale - dt / HEAT_FADE_SECONDS);
+    const next = this.hasEnded() ? Math.max(0, this.heatScale - dt / HEAT_FADE_SECONDS) : 1;
     const scale = next < HEAT_EPSILON ? 0 : next;
     if (scale === this.heatScale) return;
     this.heatScale = scale;
