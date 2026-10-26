@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type CityDataState, useCityData } from '@/hooks/useCityData';
 import { formatReadout, type TooltipInfo } from '@/lib/city/format';
@@ -75,7 +74,6 @@ function useHoverInfo(hoverId: number | null, sync: CitySync, data: CityDataStat
 /** The `/owner/repo` page: today's city first, then the replay, with the HUD around it. */
 export function CityView({ owner, repo }: CityViewProps) {
   const data = useCityData({ owner, repo });
-  const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<LabelsHandle>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -107,8 +105,12 @@ export function CityView({ owner, repo }: CityViewProps) {
   useEffect(() => {
     if (fullName === null || fullName === `${owner}/${repo}`) return;
     const path = canonicalPath(fullName);
-    if (path) router.replace(path);
-  }, [fullName, owner, repo, router]);
+    if (path === null) return;
+    const { location, history } = window;
+    if (location.pathname === path) return;
+    // In place (Ruling R22): Next syncs native history calls, so the scene and data stay mounted.
+    history.replaceState(null, '', `${path}${location.search}${location.hash}`);
+  }, [fullName, owner, repo]);
 
   const history = sync.replay?.history ?? null;
   const readout = useMemo(() => {

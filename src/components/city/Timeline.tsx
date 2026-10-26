@@ -15,24 +15,29 @@ export interface PlayerProps {
 /** Status lines replace the player: history progress, a history error, or a one-commit repo. */
 export type TimelineProps = { progress: number } | { message: string } | { oneCommit: string } | PlayerProps;
 
-function StatusLine({ text, live }: { text: string; live?: boolean }) {
+/** Progress, a history error or the one-commit line: these change rarely, so they're announced. */
+function StatusLine({ text }: { text: string }) {
   return (
     <section className={`${styles.panel} ${styles.timeline} ${styles.statusOnly}`} aria-label="Timeline">
-      <p className={styles.statusText} role={live ? 'status' : undefined}>
+      <p className={styles.statusText} role="status">
         {text}
       </p>
     </section>
   );
 }
 
-/** "Mar 2019 · commit 1,204 · 224 files" with the date in bold, as in the prototype. */
+/**
+ * "Mar 2019 · commit 1,204 · 224 files" with the date in bold, as in the prototype.
+ * Deliberately not a live region: it changes many times a second during the replay.
+ * Screen readers get the value from the slider's aria-valuetext instead.
+ */
 function Readout({ text }: { text: string }) {
   const [date, ...rest] = text.split(' · ');
   return (
-    <output className={styles.stamp}>
+    <span className={styles.stamp}>
       <b>{date}</b>
       {rest.length > 0 && ` · ${rest.join(' · ')}`}
-    </output>
+    </span>
   );
 }
 
@@ -63,7 +68,7 @@ function Player({ index, count, playing, readout, activity, onSeek, onTogglePlay
 
 export function Timeline(props: TimelineProps) {
   if ('progress' in props) return <StatusLine text={`Fetching history… ${Math.round(props.progress * 100)}%`} />;
-  if ('message' in props) return <StatusLine text={props.message} live />;
+  if ('message' in props) return <StatusLine text={props.message} />;
   if ('oneCommit' in props) return <StatusLine text={formatOneCommit(props.oneCommit)} />;
   return <Player {...props} />;
 }

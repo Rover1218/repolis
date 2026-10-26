@@ -9,10 +9,8 @@ import type { LabelPosition } from '@/scene/city-scene';
 import { CityView } from './CityView';
 import { FakeScene, makeHistory, makeLatest } from './test-city';
 
-const nav = vi.hoisted(() => ({ replace: vi.fn() }));
 const data = vi.hoisted(() => ({ current: { phase: 'loading' } as CityDataState }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => nav }));
 vi.mock('@/hooks/useCityData', () => ({ useCityData: () => data.current }));
 // The scene is only ever imported dynamically, after `FakeScene` is initialised.
 vi.mock('@/scene/city-scene', () => ({ CityScene: FakeScene }));
@@ -43,7 +41,6 @@ async function liveScene(): Promise<FakeScene> {
 
 beforeEach(() => {
   FakeScene.reset();
-  nav.replace.mockReset();
   data.current = { phase: 'loading' };
   frames = new Map();
   now = 0;
@@ -141,19 +138,43 @@ describe('CityView phases', () => {
 });
 
 describe('canonical URL', () => {
-  it('replaces a wrong-case URL with the canonical full name', async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('rewrites a wrong-case URL in place, without remounting the city', async () => {
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    const latest = makeLatest({ fullName: 'facebook/react' });
+    data.current = { phase: 'today', latest, progress: 0 };
+    const { rerender } = render(view('Facebook', 'React'));
+    const scene = await liveScene();
+    await waitFor(() => expect(replaceState).toHaveBeenCalledWith(null, '', '/facebook/react'));
+    expect(window.location.pathname).toBe('/facebook/react');
+    const { manifest, history } = makeHistory();
+    data.current = { phase: 'history', latest, manifest, history };
+    rerender(view('Facebook', 'React'));
+    expect(replaceState).toHaveBeenCalledTimes(1);
+    expect(scene.dispose).not.toHaveBeenCalled();
+    expect(FakeScene.instances).toHaveLength(1);
+  });
+
+  it('rewrites the URL once under Strict Mode', async () => {
+    const replaceState = vi.spyOn(window.history, 'replaceState');
     data.current = { phase: 'today', latest: makeLatest({ fullName: 'facebook/react' }), progress: 0 };
-    render(view('Facebook', 'React'));
-    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/facebook/react'));
+    render(<StrictMode>{view('Facebook', 'React')}</StrictMode>);
+    await liveScene();
+    expect(replaceState).toHaveBeenCalledTimes(1);
   });
 
   it('leaves a canonical URL alone and ignores malformed names', async () => {
+    const replaceState = vi.spyOn(window.history, 'replaceState');
     data.current = { phase: 'today', latest: makeLatest({ fullName: 'o/r' }), progress: 0 };
     const { rerender } = render(view());
     data.current = { phase: 'today', latest: makeLatest({ fullName: '/evil.example/x' }), progress: 0 };
     rerender(view());
     await liveScene();
-    expect(nav.replace).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
   });
 });
 
@@ -167,13 +188,14 @@ describe('replay', () => {
     expect(slider).toHaveValue('0');
     expect(scene.collapse).toHaveBeenCalledTimes(1);
     expect(scene.setLayout).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('status')).toHaveTextContent('Jan 2024 · commit 1 · 2 files');
+    expect(slider).toHaveAttribute('aria-valuetext', 'Jan 2024 · commit 1 · 2 files');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     runFrames(41, 100);
     expect(slider).toHaveValue('1');
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: '2' } });
-    expect(screen.getByRole('status')).toHaveTextContent('Mar 2024 · commit 3 · 3 files');
+    expect(slider).toHaveAttribute('aria-valuetext', 'Mar 2024 · commit 3 · 3 files');
   });
 
   it("collapses today's city before laying out the replay", async () => {
