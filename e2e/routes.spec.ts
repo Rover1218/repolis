@@ -25,6 +25,12 @@ test.describe('routes (R37)', () => {
     await expect(page.getByRole('heading', { name: 'facebook/react' })).toBeVisible();
   });
 
+  test('the share image route is not swallowed by the deep-link redirect', async ({ request }) => {
+    const res = await request.get('/facebook/react/opengraph-image', { maxRedirects: 0 });
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-type']).toBe('image/png');
+  });
+
   test('a deep link with a malformed owner is not found', async ({ page }) => {
     const res = await page.goto('/-bad/repo/tree/main');
     expect(res?.status()).toBe(404);
