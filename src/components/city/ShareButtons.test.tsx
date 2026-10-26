@@ -7,6 +7,7 @@ const blob = new Blob(['png'], { type: 'image/png' });
 let writeText: ReturnType<typeof vi.fn>;
 let click: ReturnType<typeof vi.spyOn>;
 let download: string | null;
+let attachedOnClick: boolean | null;
 
 async function press(name: string) {
   await act(async () => {
@@ -21,8 +22,10 @@ beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:fake');
   URL.revokeObjectURL = vi.fn();
   download = null;
+  attachedOnClick = null;
   click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
     download = this.download;
+    attachedOnClick = document.body.contains(this);
   });
 });
 
@@ -60,7 +63,7 @@ describe('ShareButtons copy link', () => {
 });
 
 describe('ShareButtons save image', () => {
-  it('downloads {owner}-{repo}-repolis.png via an object URL and revokes it', async () => {
+  it('downloads {owner}-{repo}-repolis.png via an object URL, Safari-safe', async () => {
     const onSaveImage = vi.fn(() => Promise.resolve(blob));
     render(<ShareButtons fullName="facebook/react" onSaveImage={onSaveImage} />);
     await press('Save image');
@@ -68,6 +71,13 @@ describe('ShareButtons save image', () => {
     expect(URL.createObjectURL).toHaveBeenCalledWith(blob);
     expect(click).toHaveBeenCalledTimes(1);
     expect(download).toBe('facebook-react-repolis.png');
+    // Safari needs the anchor in the document, and the URL alive until the click has been handled.
+    expect(attachedOnClick).toBe(true);
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
   });
 

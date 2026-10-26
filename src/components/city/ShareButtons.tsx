@@ -14,15 +14,19 @@ type Flash = 'copied' | 'copy-failed' | 'save-failed' | null;
 
 const FLASH_MS = 2000;
 
+/** Safari ignores a detached anchor and can cancel a download whose URL is revoked synchronously. */
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.hidden = true;
+  document.body.appendChild(a);
   try {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
     a.click();
   } finally {
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 }
 
