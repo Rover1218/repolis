@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Repolis
 
-## Getting Started
+Repolis turns any public GitHub repo into a holographic 3D city. Each top-level folder is a district, each file is a building, and a building's height is the file's size. A time-lapse replays the repo's history, so you can watch the skyline grow from the first commit to today, then fly around or walk through it.
 
-First, run the development server:
+## Features
+
+- Paste any public GitHub repo link and get its city.
+- Time-lapse of up to about 200 history snapshots: buildings rise as files grow, glow when changed, and sink when deleted.
+- Orbit from outside or fly in and walk the streets.
+- Every city has a shareable link with a skyline preview, plus Copy link and Save image.
+- Famous example repos on the front page.
+
+## How it works
+
+1. `GET /api/city/{owner}/{repo}` returns today's city and the head commit SHA, so the skyline shows up quickly.
+2. `GET /api/city/{owner}/{repo}/{head}/manifest` returns the snapshot list and the plan for replaying history.
+3. `GET /api/city/{owner}/{repo}/{head}/batch/{k}` returns the file changes for each batch of snapshots, loaded in order while the city is already visible.
+
+Results are cached by Vercel's CDN (the head-pinned manifest and batches are immutable) and in the visitor's browser. There is no database. All GitHub calls happen server-side with one token.
+
+## Local setup
+
+Requires Node 22+.
 
 ```bash
+npm install
+cp .env.example .env.local   # then set GITHUB_TOKEN
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`GITHUB_TOKEN` is a fine-grained personal access token with "Public repositories (read-only)" access and no other permissions. It stays on the server and must never be committed.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Script | What it does |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build |
+| `npm test` | Run unit and integration tests (Vitest) |
+| `npm run coverage` | Tests with coverage thresholds (80%) |
+| `npm run typecheck` | TypeScript check |
+| `npm run lint` | ESLint |
+| `npm run e2e` | Playwright end-to-end tests |
+| `npm run warm -- <baseUrl>` | Request every example city on a deployed site to fill the cache |
+| `npm run verify:github` | Check GitHub's GraphQL commit cursors against REST pagination (needs `GITHUB_TOKEN`) |
 
-## Learn More
+## Deploy
 
-To learn more about Next.js, take a look at the following resources:
+1. Create a private GitHub repo and push this project to it.
+2. In Vercel (the free Hobby plan is enough), choose Add New, Project, and import the repo.
+3. Set `GITHUB_TOKEN` for both Production and Preview.
+4. Deploy.
+5. Warm the examples: `npm run warm -- https://<your-production-url>`. The `warm.yml` workflow also does this after each successful Production deployment.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, coverage and the E2E tests on every push and pull request.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Limits
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Public repos only; there is no sign-in.
+- GitHub allows about 5,000 API requests per hour per token. A first, uncached build of a city costs several requests per snapshot, so heavy traffic on uncached repos can run into that budget; cached cities cost nothing.
+- Very large repos use a coarse mode with fewer, less precise snapshots.
