@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CityError } from '@/lib/errors';
 import type { RepoRef } from '@/lib/repo-ref';
-import { getFullTree } from './full-tree';
+import { getFullTree, MAX_TREE_REQUESTS } from './full-tree';
 import type { GitHub, TreeEntry } from './types';
 
 const REF: RepoRef = { owner: 'o', repo: 'r' };
@@ -120,5 +120,19 @@ describe('getFullTree', () => {
       'R:n': { truncated: false, entries: [{ path: 'a', type: 'tree', sha: 'A' }] },
     });
     await expect(getFullTree(gh, REF, 'R')).rejects.toThrow('no listing A:r');
+  });
+
+  it('caps total getTree calls at MAX_TREE_REQUESTS on a very wide tree', async () => {
+    const subtrees: TreeEntry[] = Array.from({ length: 200 }, (_, i) => ({ path: `d${i}`, type: 'tree', sha: `S${i}` }));
+    const listings: Record<string, Listing> = {
+      'R:r': { truncated: true, entries: [] },
+      'R:n': { truncated: false, entries: subtrees },
+    };
+    for (let i = 0; i < 200; i++) listings[`S${i}:r`] = { truncated: false, entries: [blob('f')] };
+    const { gh, log } = fakeGh(listings);
+    const err = await getFullTree(gh, REF, 'R').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CityError);
+    expect((err as CityError).code).toBe('upstream');
+    expect(log.length).toBeLessThanOrEqual(MAX_TREE_REQUESTS);
   });
 });

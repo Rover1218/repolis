@@ -13,6 +13,7 @@ import type { CommitInfo, GitHub, RepoHead, TreeEntry } from './types';
 const API = 'https://api.github.com';
 const REST_FALLBACK_CONCURRENCY = 6;
 const MS_PER_MINUTE = 60_000;
+const TREE_TYPES: ReadonlySet<string> = new Set(['blob', 'tree', 'commit']);
 
 type Resource = 'core' | 'graphql';
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- untrusted JSON, narrowed at use
@@ -52,7 +53,7 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
     return undefined;
   };
 
-  const send = async (resource: Resource, url: string, init: RequestInit): Promise<Json> => {
+  const send = async (resource: Resource, url: string, init: RequestInit): Promise<{ body: Json; headers: Headers }> => {
     let res: Response;
     try {
       res = await doFetch(url, {
@@ -79,14 +80,14 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
       throw new CityError('upstream');
     }
     try {
-      return (await res.json()) as Json;
+      return { body: (await res.json()) as Json, headers: res.headers };
     } catch (cause) {
       throw new CityError('upstream', { cause });
     }
   };
 
   const graphql = async (query: string, variables: Json, tolerateUnclassified = false): Promise<Json> => {
-    const body = await send('graphql', `${API}/graphql`, {
+    const { body, headers } = await send('graphql', `${API}/graphql`, {
       method: 'POST',
       body: JSON.stringify({ query, variables }),
     });
@@ -95,9 +96,7 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
       const types = errors.map((e) => e?.type);
       if (types.includes('NOT_FOUND')) throw new CityError('not-found');
       if (types.includes('RATE_LIMITED')) {
-        const reset = limits.get('graphql');
-        const retryAfterMinutes = reset && reset.remaining === 0 ? minutesUntil(reset.resetAt) : undefined;
-        throw new CityError('rate-limited', { retryAfterMinutes });
+        throw new CityError('rate-limited', { retryAfterMinutes: rateLimitMinutes(headers) ?? 1 });
       }
       throw tolerateUnclassified ? new UnclassifiedGraphQLError() : new CityError('upstream');
     }
@@ -106,11 +105,13 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
   };
 
   const toCommit = (n: Json | null | undefined): CommitInfo => {
-    if (!n || typeof n.oid !== 'string' || typeof n.tree?.oid !== 'string') throw new CityError('upstream');
+    if (!n || typeof n.oid !== 'string' || typeof n.tree?.oid !== 'string' || typeof n.committedDate !== 'string') {
+      throw new CityError('upstream');
+    }
     return {
       sha: n.oid,
       treeSha: n.tree.oid,
-      date: String(n.committedDate),
+      date: n.committedDate,
       author: n.author?.user?.login ?? n.author?.name ?? null,
       message: String(n.messageHeadline ?? '').split('\n')[0],
     };
@@ -118,13 +119,16 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
 
   const restCommit = async (ref: RepoRef, headSha: string, rank: number): Promise<CommitInfo> => {
     const url = `${API}/repos/${ref.owner}/${ref.repo}/commits?sha=${encodeURIComponent(headSha)}&per_page=1&page=${rank + 1}`;
-    const body = await send('core', url, { method: 'GET' });
+    const { body } = await send('core', url, { method: 'GET' });
     const c: Json | undefined = Array.isArray(body) ? body[0] : undefined;
-    if (!c || typeof c.sha !== 'string' || typeof c.commit?.tree?.sha !== 'string') throw new CityError('upstream');
+    const date = c?.commit?.committer?.date ?? c?.commit?.author?.date;
+    if (!c || typeof c.sha !== 'string' || typeof c.commit?.tree?.sha !== 'string' || typeof date !== 'string') {
+      throw new CityError('upstream');
+    }
     return {
       sha: c.sha,
       treeSha: c.commit.tree.sha,
-      date: String(c.commit.committer?.date ?? c.commit.author?.date),
+      date,
       author: c.author?.login ?? c.commit.author?.name ?? null,
       message: String(c.commit.message ?? '').split('\n')[0],
     };
@@ -185,10 +189,13 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
 
     async getTree(ref, treeSha, recursive) {
       const url = `${API}/repos/${ref.owner}/${ref.repo}/git/trees/${encodeURIComponent(treeSha)}${recursive ? '?recursive=1' : ''}`;
-      const body = await send('core', url, { method: 'GET' });
+      const { body } = await send('core', url, { method: 'GET' });
       if (!Array.isArray(body.tree)) throw new CityError('upstream');
       const entries: TreeEntry[] = body.tree.map((t: Json) => {
-        const entry: TreeEntry = { path: String(t.path), type: t.type, sha: String(t.sha) };
+        if (typeof t?.path !== 'string' || typeof t.sha !== 'string' || !TREE_TYPES.has(t.type)) {
+          throw new CityError('upstream');
+        }
+        const entry: TreeEntry = { path: t.path, type: t.type, sha: t.sha };
         if (typeof t.size === 'number') entry.size = t.size;
         return entry;
       });

@@ -102,6 +102,24 @@ describe('getRepoHead', () => {
     expect((await rejection(client.getRepoHead(REF))).code).toBe('rate-limited');
   });
 
+  it('RATE_LIMITED minutes come from the reset header when quota is exhausted', async () => {
+    const headers = { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(NOW / 1000 + 420) };
+    const { client } = gh({ [GQL]: jsonResponse({ errors: [{ type: 'RATE_LIMITED' }] }, { headers }) });
+    expect((await rejection(client.getRepoHead(REF))).retryAfterMinutes).toBe(7);
+  });
+
+  it('RATE_LIMITED minutes use retry-after, else fall back to 1', async () => {
+    const withRetry = gh({ [GQL]: jsonResponse({ errors: [{ type: 'RATE_LIMITED' }] }, { headers: { 'retry-after': '130' } }) });
+    expect((await rejection(withRetry.client.getRepoHead(REF))).retryAfterMinutes).toBe(3);
+    const bare = gh({ [GQL]: jsonResponse({ errors: [{ type: 'RATE_LIMITED' }] }) });
+    expect((await rejection(bare.client.getRepoHead(REF))).retryAfterMinutes).toBe(1);
+  });
+
+  it('rejects a commit node missing committedDate as upstream', async () => {
+    const { client } = gh({ [GQL]: jsonResponse(makeHeadBody({ committedDate: undefined })) });
+    expect((await rejection(client.getRepoHead(REF))).code).toBe('upstream');
+  });
+
   it('maps other GraphQL error types to upstream', async () => {
     const { client } = gh({ [GQL]: jsonResponse({ errors: [{ type: 'SOMETHING' }] }) });
     expect((await rejection(client.getRepoHead(REF))).code).toBe('upstream');
@@ -300,6 +318,14 @@ describe('getTree', () => {
     expect((await rejection(r404)).code).toBe('not-found');
     const r409 = gh({ [TREES]: jsonResponse({}, { status: 409 }) }).client.getTree(REF, 'x', true);
     expect((await rejection(r409)).code).toBe('empty');
+  });
+
+  it('rejects malformed tree entries as upstream', async () => {
+    const bad = [{ type: 'blob', sha: 's' }, { path: 'a', type: 'weird', sha: 's' }, { path: 'a', type: 'blob' }];
+    for (const entry of bad) {
+      const { client } = gh({ [TREES]: jsonResponse({ truncated: false, tree: [entry] }) });
+      expect((await rejection(client.getTree(REF, 'x', true))).code).toBe('upstream');
+    }
   });
 
   it('rejects a malformed tree body as upstream', async () => {
