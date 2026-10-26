@@ -98,6 +98,10 @@ export function createFakeGitHub(repo: FakeRepo): FakeGitHub {
       }
       return { entries: listDir(commit.files, prefix, recursive || (!isHuge && colon < 0), rootSha), truncated: false };
     },
+    /** Any of the fake's own commits is an ancestor of the head; anything else is not. */
+    async isAncestor(_ref, sha) {
+      return commits.some((c) => c.sha.toLowerCase() === sha.toLowerCase());
+    },
     remaining: (resource) => (resource === 'core' ? (repo.remaining ?? null) : null),
   };
 }

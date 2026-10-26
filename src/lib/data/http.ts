@@ -2,7 +2,8 @@ import { CityError, errorMessage, httpStatus, type CityErrorCode } from '@/lib/e
 import { isValidOwner, isValidRepoName, type RepoRef } from '@/lib/repo-ref';
 import type { ApiResponse } from '@/lib/history/types';
 
-export const CACHE_LATEST = 'public, s-maxage=3600, stale-while-revalidate=86400';
+/** Short-lived so a client's head is rarely stale; the manifest route accepts stale ancestors anyway (R31). */
+export const CACHE_LATEST = 'public, s-maxage=300, stale-while-revalidate=3600';
 export const CACHE_IMMUTABLE = 'public, s-maxage=31536000, immutable';
 export const NO_STORE = 'no-store';
 

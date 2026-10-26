@@ -14,6 +14,13 @@ const API = 'https://api.github.com';
 const REST_FALLBACK_CONCURRENCY = 6;
 const MS_PER_MINUTE = 60_000;
 const TREE_TYPES: ReadonlySet<string> = new Set(['blob', 'tree', 'commit']);
+/** Compare `{sha}...{branch}` status: the sha is an ancestor when the branch is ahead of it or the same. */
+const ANCESTRY: ReadonlyMap<unknown, boolean> = new Map([
+  ['ahead', true],
+  ['identical', true],
+  ['behind', false],
+  ['diverged', false],
+]);
 
 type Resource = 'core' | 'graphql';
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- untrusted JSON, narrowed at use
@@ -200,6 +207,22 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
         return entry;
       });
       return { entries, truncated: body.truncated === true };
+    },
+
+    async isAncestor(ref, sha, branch) {
+      assertSafeSha(sha);
+      const head = branch.split('/').map(encodeURIComponent).join('/');
+      const url = `${API}/repos/${ref.owner}/${ref.repo}/compare/${sha}...${head}?per_page=1`;
+      let body: Json;
+      try {
+        ({ body } = await send('core', url, { method: 'GET' }));
+      } catch (e) {
+        if (e instanceof CityError && e.code === 'not-found') return false;
+        throw e;
+      }
+      const verdict = ANCESTRY.get(body.status);
+      if (verdict === undefined) throw new CityError('upstream');
+      return verdict;
     },
 
     remaining(resource) {

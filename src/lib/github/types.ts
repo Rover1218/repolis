@@ -28,5 +28,7 @@ export interface GitHub {
   /** rank 0 = head; result has the same order as `ranks`. */
   getCommitsAtRanks(ref: RepoRef, headSha: string, ranks: number[]): Promise<CommitInfo[]>;
   getTree(ref: RepoRef, treeSha: string, recursive: boolean): Promise<{ entries: TreeEntry[]; truncated: boolean }>;
+  /** True when `sha` is `branch`'s tip or one of its ancestors; false when it is not (or unknown to GitHub). */
+  isAncestor(ref: RepoRef, sha: string, branch: string): Promise<boolean>;
   remaining(resource: 'core' | 'graphql'): { remaining: number; resetAt: number } | null;
 }

@@ -19,6 +19,9 @@ function fakeGh(listings: Record<string, Listing>): { gh: GitHub; log: string[] 
     getCommitsAtRanks: async () => {
       throw new Error('unused');
     },
+    isAncestor: async () => {
+      throw new Error('unused');
+    },
     remaining: () => null,
     getTree: async (_ref, sha, recursive) => {
       const key = `${sha}:${recursive ? 'r' : 'n'}`;

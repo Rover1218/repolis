@@ -3,24 +3,21 @@ import { CityError } from '@/lib/errors';
 import { getGitHub } from '@/lib/data/github-instance';
 import { CACHE_IMMUTABLE, CACHE_LATEST, NO_STORE } from '@/lib/data/http';
 import { getLatestCity } from '@/lib/data/city-data';
+import { testCache } from '@/lib/data/test-cache';
 import { createFakeGitHub, generateCommits, type FakeCommit } from '@/lib/history/fake-github';
 import type { GitHub } from '@/lib/github/types';
 import { GET as getLatest } from './[owner]/[repo]/route';
 import { GET as getManifest } from './[owner]/[repo]/[head]/manifest/route';
 import { GET as getBatch } from './[owner]/[repo]/[head]/batch/[k]/route';
 
-const capturedKeys: string[][] = [];
-vi.mock('next/cache', () => ({
-  unstable_cache: (fn: unknown, keyParts: string[]) => {
-    capturedKeys.push(keyParts);
-    return fn;
-  },
-}));
+vi.mock('next/cache', async () => ({ unstable_cache: (await import('@/lib/data/test-cache')).testCache.unstable_cache }));
 vi.mock('@/lib/data/github-instance', () => ({ getGitHub: vi.fn() }));
 
 const hex = (i: number): string => i.toString(16).padStart(40, '0');
 const COMMITS: FakeCommit[] = generateCommits(25).map((c, i) => ({ ...c, sha: hex(i + 1) }));
 const HEAD = hex(25);
+/** A well-formed sha that is not one of the fake's commits (so not an ancestor of its head). */
+const FOREIGN = 'f'.repeat(40);
 const fake = (): GitHub => createFakeGitHub({ commits: COMMITS });
 
 let ip = 0;
@@ -28,7 +25,7 @@ const req = (): Request => new Request('http://x', { headers: { 'x-forwarded-for
 const ctx = <P extends object>(params: P) => ({ params: Promise.resolve(params) });
 
 beforeEach(() => {
-  capturedKeys.length = 0;
+  testCache.reset();
   vi.mocked(getGitHub).mockReturnValue(fake());
 });
 afterEach(() => vi.restoreAllMocks());
@@ -91,29 +88,30 @@ describe('GET /api/city/{owner}/{repo}', () => {
 describe('cache keys', () => {
   test('latest key is versioned and lower-cased', async () => {
     await getLatestCity({ owner: 'Facebook', repo: 'React' }, 'k').catch(() => undefined);
-    expect(capturedKeys).toContainEqual(['latest', 'v1', 'facebook', 'react']);
+    expect(testCache.keys).toContainEqual(['latest', 'v1', 'facebook', 'react']);
   });
 
   test('manifest and batch keys are versioned and lower-cased', async () => {
     await getBatch(req(), ctx({ owner: 'Facebook', repo: 'React', head: HEAD.toUpperCase(), k: '0' }));
-    expect(capturedKeys).toContainEqual(['manifest', 'v1', 'facebook', 'react', HEAD]);
-    expect(capturedKeys).toContainEqual(['batch', 'v1', 'facebook', 'react', HEAD, '0']);
+    expect(testCache.keys).toContainEqual(['manifest', 'v1', 'facebook', 'react', HEAD]);
+    expect(testCache.keys).toContainEqual(['batch', 'v1', 'facebook', 'react', HEAD, '0']);
   });
 });
 
 describe('latest limit', () => {
-  test('the 31st uncached latest call from one visitor is rate limited', async () => {
+  test('the 31st uncached latest call from one visitor is rate limited; cached calls are free', async () => {
     const r = (): Request => new Request('http://x', { headers: { 'x-forwarded-for': '88.8.8.8' } });
-    const c = ctx({ owner: 'facebook', repo: 'react' });
-    for (let i = 0; i < 30; i++) expect((await getLatest(r(), c)).status).toBe(200);
-    const res = await getLatest(r(), c);
+    for (let i = 0; i < 5; i++) expect((await getLatest(r(), ctx({ owner: 'facebook', repo: 'react' }))).status).toBe(200);
+    // Unknown repos are misses every time (errors are not cached), so each one counts.
+    for (let i = 0; i < 29; i++) expect((await getLatest(r(), ctx({ owner: 'nobody', repo: `r${i}` }))).status).toBe(404);
+    const res = await getLatest(r(), ctx({ owner: 'nobody', repo: 'last' }));
     expect(res.status).toBe(429);
     expect((await res.json()).error.code).toBe('rate-limited');
     expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 });
 
-describe('canonical ref and current-head check', () => {
+describe('canonical ref and head check (R31)', () => {
   test('manifest fullName is canonical regardless of the first caller casing', async () => {
     const a = await (await getManifest(req(), ctx({ owner: 'Facebook', repo: 'React', head: HEAD }))).json();
     const b = await (await getManifest(req(), ctx({ owner: 'facebook', repo: 'react', head: HEAD }))).json();
@@ -121,20 +119,31 @@ describe('canonical ref and current-head check', () => {
     expect(b.data).toEqual(a.data);
   });
 
-  test('a well-formed head that is not the current head gives 502 upstream and builds nothing', async () => {
+  test('a stale head that is an ancestor of the default branch gives its manifest', async () => {
+    const res = await getManifest(req(), ctx({ owner: 'facebook', repo: 'react', head: hex(10) }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe(CACHE_IMMUTABLE);
+    const body = await res.json();
+    expect(body.data.headSha).toBe(hex(10));
+    expect(body.data.snapshots).toHaveLength(10);
+  });
+
+  test('a foreign head gives 502 upstream, builds nothing and caches nothing', async () => {
     const gh = fake();
     const spy = vi.spyOn(gh, 'getCommitCount');
     vi.mocked(getGitHub).mockReturnValue(gh);
-    const res = await getManifest(req(), ctx({ owner: 'facebook', repo: 'react', head: hex(10) }));
+    const res = await getManifest(req(), ctx({ owner: 'facebook', repo: 'react', head: FOREIGN }));
     expect(res.status).toBe(502);
     expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
     const body = await res.json();
     expect(body.error).toEqual({ code: 'upstream', message: "Couldn't reach GitHub — try again" });
     expect(spy).not.toHaveBeenCalled();
+    expect(testCache.runs.map((k) => k[0])).toEqual(['latest', 'manifest']);
+    expect(testCache.has(['manifest', 'v1', 'facebook', 'react', FOREIGN])).toBe(false);
   });
 
-  test('batch with a stale head is also refused', async () => {
-    const res = await getBatch(req(), ctx({ owner: 'facebook', repo: 'react', head: hex(10), k: '0' }));
+  test('batch with a foreign head is also refused', async () => {
+    const res = await getBatch(req(), ctx({ owner: 'facebook', repo: 'react', head: FOREIGN, k: '0' }));
     expect(res.status).toBe(502);
   });
 });
@@ -158,9 +167,12 @@ describe('GET .../{head}/manifest', () => {
 
   test('returns 429 with retryAfterMinutes once a visitor exceeds the build limit', async () => {
     const limited = (): Request => new Request('http://x', { headers: { 'x-forwarded-for': '77.7.7.7' } });
-    const c = ctx({ owner: 'facebook', repo: 'react', head: HEAD });
-    for (let i = 0; i < 10; i++) expect((await getManifest(limited(), c)).status).toBe(200);
-    const res = await getManifest(limited(), c);
+    const c = (i: number) => ctx({ owner: 'facebook', repo: 'react', head: hex(i) });
+    // Each head is a distinct manifest miss (every fake commit is an ancestor of the head).
+    for (let i = 1; i <= 10; i++) expect((await getManifest(limited(), c(i))).status).toBe(200);
+    // A cached manifest is not a build, so it never counts.
+    expect((await getManifest(limited(), c(1))).status).toBe(200);
+    const res = await getManifest(limited(), c(11));
     expect(res.status).toBe(429);
     const body = await res.json();
     expect(body.error.retryAfterMinutes).toBeGreaterThanOrEqual(1);

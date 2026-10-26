@@ -1,4 +1,5 @@
 import { CityError } from '@/lib/errors';
+import type { GitHub } from '@/lib/github/types';
 import { buildBatch, buildLatest, buildManifest } from '@/lib/history/build';
 import type { CityManifest, LatestCity, SnapshotBatch } from '@/lib/history/types';
 import type { RepoRef } from '@/lib/repo-ref';
@@ -31,15 +32,31 @@ export function getLatestCity(ref: RepoRef, clientKey: string): Promise<LatestCi
   });
 }
 
-/** Only the repo's current head may be built; the canonical (GitHub-cased) ref is used so cached data never depends on caller casing. */
-export function getManifest(ref: RepoRef, headSha: string, clientKey: string): Promise<CityManifest> {
+/**
+ * A client's head may be up to an hour stale (Data Cache + CDN), so besides the cached latest head
+ * any ancestor of the default branch is accepted; anything else is refused before building (R31).
+ */
+async function assertBuildableHead(gh: GitHub, ref: RepoRef, head: string, latest: LatestCity): Promise<void> {
+  if (head === latest.headSha.toLowerCase()) return;
+  if (!(await gh.isAncestor(ref, head, latest.defaultBranch))) throw new CityError('upstream');
+}
+
+/**
+ * The latest city is resolved here, outside the cached callback: Next skips the cache read for a
+ * nested unstable_cache, which would rebuild latest on every miss (R31). The canonical
+ * (GitHub-cased) ref is used so cached data never depends on caller casing.
+ */
+export async function getManifest(ref: RepoRef, headSha: string, clientKey: string): Promise<CityManifest> {
   const [o, r] = lower(ref);
   const head = headSha.toLowerCase();
+  const latest = await getLatestCity(ref, clientKey);
+  const canonical = canonicalRef(latest.fullName, ref);
   return cached(['manifest', CACHE_SCHEMA, o, r, head], false, async () => {
-    const latest = await getLatestCity(ref, clientKey);
-    if (head !== latest.headSha.toLowerCase()) throw new CityError('upstream');
+    // Before the ancestry request too, so made-up heads cannot spend the shared GitHub budget.
     enforce(buildLimiter, clientKey);
-    return buildManifest(getGitHub(), canonicalRef(latest.fullName, ref), head);
+    const gh = getGitHub();
+    await assertBuildableHead(gh, canonical, head, latest);
+    return buildManifest(gh, canonical, head);
   });
 }
 
@@ -48,6 +65,7 @@ function canonicalRef(fullName: string, fallback: RepoRef): RepoRef {
   return owner && repo ? { owner, repo } : fallback;
 }
 
+/** The manifest is resolved outside the batch's cached callback (no nested unstable_cache). */
 export async function getBatch(ref: RepoRef, headSha: string, batch: number, clientKey: string): Promise<SnapshotBatch> {
   const [o, r] = lower(ref);
   const head = headSha.toLowerCase();

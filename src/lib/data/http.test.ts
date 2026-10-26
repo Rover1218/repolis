@@ -15,6 +15,12 @@ describe('clientKeyFrom', () => {
   });
 });
 
+describe('Cache-Control values', () => {
+  test('latest stays fresh for 5 minutes and may be served stale for an hour (R31)', () => {
+    expect(CACHE_LATEST).toBe('public, s-maxage=300, stale-while-revalidate=3600');
+  });
+});
+
 describe('jsonOk', () => {
   test('wraps data with the given Cache-Control', async () => {
     const res = jsonOk({ a: 1 }, CACHE_LATEST);
