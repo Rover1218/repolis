@@ -26,6 +26,20 @@ describe('buildLatest', () => {
   });
 });
 
+/** Date order: main c0-c1-c2, a branch b1-b2 off c0, then merge m (first parent c2). */
+function mergeHistory(): FakeCommit[] {
+  const files = (...names: string[]): FakeCommit['files'] =>
+    Object.fromEntries(names.map((n): [string, [string, number]] => [`${n}.ts`, [`${n}-blob`, 10]]));
+  return [
+    { sha: 'c0', parents: [], files: files('a') },
+    { sha: 'c1', parents: ['c0'], files: files('a', 'b') },
+    { sha: 'b1', parents: ['c0'], files: files('a', 'x') },
+    { sha: 'c2', parents: ['c1'], files: files('a', 'b', 'c') },
+    { sha: 'b2', parents: ['b1'], files: files('a', 'x', 'y') },
+    { sha: 'm', parents: ['c2', 'b2'], files: files('a', 'b', 'c', 'x', 'y') },
+  ];
+}
+
 describe('buildManifest', () => {
   test('3 commits give exact one-per-commit snapshots', async () => {
     const m = await buildManifest(threeCommits(), ref, 'c');
@@ -38,6 +52,31 @@ describe('buildManifest', () => {
     expect(m.mode).toBe('full');
     expect(m.mergePlan).toEqual([]);
     expect(m.treeRequests).toBe(1);
+  });
+
+  test('a linear history keeps one snapshot per commit and stays exact (R35)', async () => {
+    const m = await buildManifest(createFakeGitHub({ commits: generateCommits(5) }), ref, 'c4');
+    expect(m.snapshots.map((s) => s.sha)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4']);
+    expect(m.snapshots.map((s) => s.commitIndex)).toEqual([0, 1, 2, 3, 4]);
+    expect(m.exact).toBe(true);
+  });
+
+  test('a merge-commit history follows the first-parent chain and is not exact (R35)', async () => {
+    const gh = createFakeGitHub({ commits: mergeHistory() });
+    const m = await buildManifest(gh, ref, 'm');
+    expect(m.totalCommits).toBe(6);
+    expect(m.snapshots.map((s) => s.sha)).toEqual(['c0', 'c1', 'c2', 'm']);
+    expect(m.snapshots.map((s) => s.commitIndex)).toEqual([0, 1, 3, 5]);
+    expect(m.snapshots.map((s) => s.index)).toEqual([0, 1, 2, 3]);
+    expect(m.exact).toBe(false);
+    // The branch's files arrive with the merge; they never flicker in and out.
+    const batch = await buildBatch(gh, ref, m, 0);
+    expect(batch.deltas.map((d) => d.changes)).toEqual([
+      [['a.ts', 10]],
+      [['b.ts', 10]],
+      [['c.ts', 10]],
+      [['x.ts', 10], ['y.ts', 10]],
+    ]);
   });
 
   test('1000 commits are sampled to 200 snapshots', async () => {

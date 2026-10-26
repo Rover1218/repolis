@@ -2,7 +2,8 @@ import { CityError } from '@/lib/errors';
 
 export const MAX_ALIASES_PER_REQUEST = 50;
 
-const COMMIT_FIELDS = 'oid committedDate messageHeadline tree { oid } author { name user { login } }';
+const COMMIT_FIELDS =
+  'oid committedDate messageHeadline tree { oid } author { name user { login } } parents(first: 2) { nodes { oid } }';
 
 export const REPO_HEAD_QUERY = `query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {

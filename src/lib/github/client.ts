@@ -111,6 +111,16 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
     return body.data;
   };
 
+  /** Parent shas from GraphQL `parents.nodes[].oid` or REST `parents[].sha`; a malformed list is upstream. */
+  const parentShas = (list: unknown, field: 'oid' | 'sha'): string[] => {
+    if (!Array.isArray(list)) throw new CityError('upstream');
+    return list.map((p: Json | null) => {
+      const sha = p?.[field];
+      if (typeof sha !== 'string') throw new CityError('upstream');
+      return sha;
+    });
+  };
+
   const toCommit = (n: Json | null | undefined): CommitInfo => {
     if (!n || typeof n.oid !== 'string' || typeof n.tree?.oid !== 'string' || typeof n.committedDate !== 'string') {
       throw new CityError('upstream');
@@ -121,6 +131,7 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
       date: n.committedDate,
       author: n.author?.user?.login ?? n.author?.name ?? null,
       message: String(n.messageHeadline ?? '').split('\n')[0],
+      parents: parentShas(n.parents?.nodes, 'oid'),
     };
   };
 
@@ -138,6 +149,7 @@ export function createGitHub(opts: { token: string; fetch?: typeof fetch; now?: 
       date,
       author: c.author?.login ?? c.commit.author?.name ?? null,
       message: String(c.commit.message ?? '').split('\n')[0],
+      parents: parentShas(c.parents, 'sha'),
     };
   };
 

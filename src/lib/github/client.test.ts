@@ -14,6 +14,7 @@ function commitNode(oid: string) {
     messageHeadline: `msg ${oid}`,
     tree: { oid: `tree-${oid}` },
     author: { name: 'Dan', user: { login: 'gaearon' } },
+    parents: { nodes: [{ oid: `parent-${oid}` }] },
   };
 }
 
@@ -30,6 +31,7 @@ function makeHeadBody(overrides: Record<string, unknown> = {}) {
             messageHeadline: 'first line',
             tree: { oid: 'tree1' },
             author: { name: 'Dan Abramov', user: { login: 'gaearon' } },
+            parents: { nodes: [{ oid: 'p1' }, { oid: 'p2' }] },
             history: { totalCount: 19876 },
             ...overrides,
           },
@@ -61,7 +63,7 @@ describe('getRepoHead', () => {
     expect(head).toEqual({
       fullName: 'facebook/react',
       defaultBranch: 'main',
-      head: { sha: 'abc123', treeSha: 'tree1', date: '2024-03-12T10:00:00Z', author: 'gaearon', message: 'first line' },
+      head: { sha: 'abc123', treeSha: 'tree1', date: '2024-03-12T10:00:00Z', author: 'gaearon', message: 'first line', parents: ['p1', 'p2'] },
       totalCommits: 19876,
     });
     expect(f.calls[0].headers.authorization).toBe('Bearer test-token');
@@ -113,6 +115,19 @@ describe('getRepoHead', () => {
     expect((await rejection(withRetry.client.getRepoHead(REF))).retryAfterMinutes).toBe(3);
     const bare = gh({ [GQL]: jsonResponse({ errors: [{ type: 'RATE_LIMITED' }] }) });
     expect((await rejection(bare.client.getRepoHead(REF))).retryAfterMinutes).toBe(1);
+  });
+
+  it('asks for up to two parents and maps a root commit to no parents (R35)', async () => {
+    const { f, client } = gh({ [GQL]: jsonResponse(makeHeadBody({ parents: { nodes: [] } })) });
+    expect((await client.getRepoHead(REF)).head.parents).toEqual([]);
+    expect(JSON.parse(f.calls[0].body ?? '{}').query).toContain('parents(first: 2) { nodes { oid } }');
+  });
+
+  it('rejects a commit node with missing or malformed parents as upstream', async () => {
+    for (const parents of [undefined, { nodes: null }, { nodes: [{ oid: 7 }] }]) {
+      const { client } = gh({ [GQL]: jsonResponse(makeHeadBody({ parents })) });
+      expect((await rejection(client.getRepoHead(REF))).code).toBe('upstream');
+    }
   });
 
   it('rejects a commit node missing committedDate as upstream', async () => {
@@ -207,7 +222,7 @@ describe('getCommitsAtRanks', () => {
     expect(query).toContain('after: "HEAD 0"');
     expect(query).toContain('after: "HEAD 249"');
     expect(commits.map((c) => c.sha)).toEqual(['sha0', 'sha1', 'sha250']);
-    expect(commits[0]).toMatchObject({ treeSha: 'tree-sha0', author: 'gaearon', message: 'msg sha0' });
+    expect(commits[0]).toMatchObject({ treeSha: 'tree-sha0', author: 'gaearon', message: 'msg sha0', parents: ['parent-sha0'] });
   });
 
   it('batches at most 50 aliases per request', async () => {
@@ -235,6 +250,7 @@ describe('getCommitsAtRanks', () => {
         sha,
         commit: { message: 'rest msg\nbody', committer: { date: '2020-01-01T00:00:00Z' }, tree: { sha: `t-${sha}` }, author: { name: 'Rest Name' } },
         author: { login: 'restuser' },
+        parents: [{ sha: `rp-${sha}` }],
       },
     ];
     const { f, client } = gh({
@@ -249,7 +265,7 @@ describe('getCommitsAtRanks', () => {
     expect(rest.map((c) => new URL(c.url).searchParams.get('page')).sort()).toEqual(['1', '2', '251']);
     expect(rest.every((c) => c.url.includes('sha=HEAD') && c.url.includes('per_page=1'))).toBe(true);
     expect(commits.map((c) => c.sha)).toEqual(['p1', 'p2', 'p251']);
-    expect(commits[0]).toEqual({ sha: 'p1', treeSha: 't-p1', date: '2020-01-01T00:00:00Z', author: 'restuser', message: 'rest msg' });
+    expect(commits[0]).toEqual({ sha: 'p1', treeSha: 't-p1', date: '2020-01-01T00:00:00Z', author: 'restuser', message: 'rest msg', parents: ['rp-p1'] });
     expect(client.remaining('core')).toEqual({ remaining: 4000, resetAt: 1700003600 });
   });
 

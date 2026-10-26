@@ -5,6 +5,8 @@ import type { CommitInfo, GitHub, RepoHead, TreeEntry } from '@/lib/github/types
 export interface FakeCommit {
   sha: string;
   files: Record<string, [sha: string, size: number]>;
+  /** Defaults to a linear chain: the previous commit in the list (none for the first). */
+  parents?: string[];
 }
 
 export interface FakeRepo {
@@ -33,8 +35,11 @@ export function generateCommits(count: number): FakeCommit[] {
   return commits;
 }
 
-function toInfo(c: FakeCommit, i: number): CommitInfo {
-  return { sha: c.sha, treeSha: `tree-${c.sha}`, date: `2024-01-${String((i % 28) + 1).padStart(2, '0')}T00:00:00Z`, author: 'dev', message: `commit ${i}` };
+function toInfo(commits: readonly FakeCommit[], i: number): CommitInfo {
+  const c = commits[i]!;
+  const parents = c.parents ?? (i > 0 ? [commits[i - 1]!.sha] : []);
+  const date = `2024-01-${String((i % 28) + 1).padStart(2, '0')}T00:00:00Z`;
+  return { sha: c.sha, treeSha: `tree-${c.sha}`, date, author: 'dev', message: `commit ${i}`, parents };
 }
 
 /** Lists the blobs (and, non-recursively, one tree entry per folder) under `prefix` of a commit's files. */
@@ -70,7 +75,7 @@ export function createFakeGitHub(repo: FakeRepo): FakeGitHub {
       if (`${ref.owner}/${ref.repo}`.toLowerCase() !== fullName.toLowerCase()) throw new CityError('not-found');
       if (commits.length === 0) throw new CityError('empty');
       const last = commits.length - 1;
-      return { fullName, defaultBranch: 'main', head: toInfo(commits[last]!, last), totalCommits: commits.length };
+      return { fullName, defaultBranch: 'main', head: toInfo(commits, last), totalCommits: commits.length };
     },
     async getCommitCount(_ref, sha) {
       return indexOf(sha) + 1;
@@ -79,9 +84,8 @@ export function createFakeGitHub(repo: FakeRepo): FakeGitHub {
       const total = indexOf(headSha) + 1;
       return ranks.map((r) => {
         const i = total - 1 - r;
-        const c = commits[i];
-        if (c === undefined) throw new CityError('upstream');
-        return toInfo(c, i);
+        if (commits[i] === undefined) throw new CityError('upstream');
+        return toInfo(commits, i);
       });
     },
     async getTree(_ref, treeSha, recursive) {

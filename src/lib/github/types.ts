@@ -6,6 +6,8 @@ export interface CommitInfo {
   date: string;
   author: string | null;
   message: string;
+  /** Parent shas, first parent first (at most two are fetched). */
+  parents: string[];
 }
 
 export interface TreeEntry {

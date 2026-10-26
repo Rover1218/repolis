@@ -59,3 +59,7 @@ CI (`.github/workflows/ci.yml`) runs lint, typecheck, coverage and the E2E tests
 - Public repos only; there is no sign-in.
 - GitHub allows about 5,000 API requests per hour per token. A first, uncached build of a city costs several requests per snapshot, so heavy traffic on uncached repos can run into that budget; cached cities cost nothing.
 - Very large repos use a coarse mode with fewer, less precise snapshots.
+
+## Known limitations
+
+- In repos that use merge commits and have more than 200 commits, the replay samples across merged branches, so a few files may flicker between snapshots. (With 200 commits or fewer, the replay follows the main line of first parents instead.)

@@ -1,9 +1,10 @@
 import { mapLimit } from '@/lib/async';
 import { CityError } from '@/lib/errors';
 import { getFullTree } from '@/lib/github/full-tree';
-import type { GitHub } from '@/lib/github/types';
+import type { CommitInfo, GitHub } from '@/lib/github/types';
 import type { RepoRef } from '@/lib/repo-ref';
 import { diffTrees, type TreeSnapshot } from './diff';
+import { type ChainCommit, firstParentChain } from './first-parent';
 import { MAX_BUILDINGS, applyMerge, ensureBudget, planMerge } from './merge';
 import { foldedFiles } from './merge-plan';
 import {
@@ -49,6 +50,22 @@ export async function buildLatest(gh: GitHub, ref: RepoRef, opts?: BuildOpts): P
   return { fullName, defaultBranch, headSha: head.sha, date: head.date, totalCommits, files, mode: truncated ? 'coarse' : 'full', mergePlan };
 }
 
+/**
+ * Exact mode (every commit was fetched) replays the first-parent chain, and is `exact` only for a
+ * linear history; sampled mode keeps the date-order sample (R35).
+ */
+function chooseSnapshots(
+  commits: CommitInfo[],
+  commitIndices: number[],
+  totalCommits: number,
+): { picked: ChainCommit[]; exact: boolean } {
+  if (commits.length !== totalCommits) {
+    return { picked: commits.map((commit, k) => ({ commit, commitIndex: commitIndices[k]! })), exact: false };
+  }
+  const { chain, linear } = firstParentChain(commits);
+  return { picked: chain, exact: linear && chain.length === totalCommits };
+}
+
 /** The list of snapshot commits (oldest first) for `headSha`: up to MAX_SNAPSHOTS, or COARSE_SNAPSHOTS for huge repos. */
 export async function buildManifest(gh: GitHub, ref: RepoRef, headSha: string, opts?: BuildOpts): Promise<CityManifest> {
   const totalCommits = await gh.getCommitCount(ref, headSha);
@@ -67,9 +84,10 @@ export async function buildManifest(gh: GitHub, ref: RepoRef, headSha: string, o
   const commits = await gh.getCommitsAtRanks(ref, headSha, ranks);
   if (commits.length !== ranks.length) throw new CityError('upstream');
 
-  const snapshots: SnapshotMeta[] = commits.map((c, index) => ({
+  const { picked, exact } = chooseSnapshots(commits, commitIndices, totalCommits);
+  const snapshots: SnapshotMeta[] = picked.map(({ commit: c, commitIndex }, index) => ({
     index,
-    commitIndex: commitIndices[index]!,
+    commitIndex,
     sha: c.sha,
     treeSha: c.treeSha,
     date: c.date,
@@ -82,7 +100,7 @@ export async function buildManifest(gh: GitHub, ref: RepoRef, headSha: string, o
     fullName: `${ref.owner}/${ref.repo}`,
     headSha,
     totalCommits,
-    exact: snapshots.length === totalCommits,
+    exact,
     mode,
     batchSize,
     snapshots,
