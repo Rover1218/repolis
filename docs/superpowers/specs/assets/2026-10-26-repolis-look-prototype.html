@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git City · hologram prototype v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent: #3ff2ff;
+    --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+    --accent-line: color-mix(in srgb, var(--accent) 38%, transparent);
+    --ink: #e4fbff;
+    --dim: #7fa6ae;
+    --panel: rgba(3, 12, 18, .7);
+    --font-ui: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    --font-display: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #010407; color: var(--ink); font: 13px/1.45 var(--font-ui); }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #scene:active { cursor: grabbing; }
+  .vignette { position: fixed; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(0,0,0,.7) 100%); }
+  .scanlines { position: fixed; inset: 0; pointer-events: none; z-index: 2; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.025) 0 1px, transparent 1px 3px); mix-blend-mode: overlay; }
+  .panel { position: fixed; z-index: 5; background: var(--panel); border: 1px solid var(--accent-line); backdrop-filter: blur(8px); border-radius: 4px; }
+
+  .brand { top: 20px; left: 20px; padding: 16px 18px; width: min(380px, calc(100vw - 40px)); }
+  .brand h1 { font: 700 22px/1 var(--font-display); letter-spacing: .16em; margin: 0 0 12px; color: var(--accent); text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .brand h1 span { color: var(--ink); opacity: .45; }
+  .repo { display: flex; gap: 8px; }
+  .repo input { flex: 1; min-width: 0; background: rgba(0,0,0,.4); border: 1px solid var(--accent-line); color: var(--ink); font: inherit; padding: 8px 10px; border-radius: 3px; }
+  .meta { margin-top: 10px; color: var(--dim); font-size: 12px; }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  button { font: inherit; color: var(--ink); background: var(--accent-soft); border: 1px solid var(--accent-line); padding: 8px 12px; border-radius: 3px; cursor: pointer; transition: background .15s, box-shadow .15s, transform .1s; }
+  button:hover { background: rgba(255,255,255,.08); box-shadow: 0 0 14px var(--accent-soft); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .ask { top: 20px; right: 20px; padding: 14px 16px; width: min(300px, calc(100vw - 40px)); }
+  .ask h2 { font: 500 16px/1.3 var(--font-display); margin: 0 0 4px; }
+  .ask p { margin: 0 0 12px; color: var(--dim); font-size: 12px; }
+  .styles { display: grid; gap: 6px; }
+  .styles button { text-align: left; display: flex; gap: 10px; align-items: center; background: transparent; }
+  .styles button .k { font-weight: 600; color: var(--accent); width: 1.2em; }
+  .styles button small { display: block; color: var(--dim); font-size: 11px; }
+  .styles button.selected { background: var(--accent-soft); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), 0 0 18px var(--accent-soft); }
+
+  .timeline { left: 50%; bottom: 20px; transform: translateX(-50%); width: min(780px, calc(100vw - 40px)); padding: 12px 14px; display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; }
+  .timeline input[type=range] { width: 100%; accent-color: var(--accent); }
+  .stamp { font-size: 12px; color: var(--dim); white-space: nowrap; min-width: 30ch; text-align: right; }
+  .stamp b { color: var(--ink); font-weight: 600; }
+  .nav { right: 20px; bottom: 96px; padding: 10px; }
+  .nav button { min-width: 11ch; }
+  .hint { position: fixed; z-index: 5; left: 50%; bottom: 84px; transform: translateX(-50%); color: var(--dim); font-size: 11px; letter-spacing: .04em; white-space: nowrap; pointer-events: none; }
+
+  .tip { position: fixed; z-index: 6; pointer-events: none; padding: 8px 10px; background: rgba(2,10,14,.9); border: 1px solid var(--accent); border-radius: 3px; font-size: 12px; transform: translate(16px, 16px); white-space: nowrap; box-shadow: 0 0 16px var(--accent-soft); }
+  .tip .path { color: var(--accent); font-weight: 600; margin-bottom: 2px; }
+  .tip .row { color: var(--dim); }
+  .label { position: fixed; z-index: 3; pointer-events: none; font-size: 11px; letter-spacing: .08em; color: var(--accent); text-shadow: 0 0 6px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.9); transform: translate(-50%, -100%); white-space: nowrap; }
+
+  @media (max-width: 760px) {
+    .ask { top: auto; bottom: 150px; }
+    .nav { bottom: auto; top: 200px; }
+    .hint { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .scanlines { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div class="vignette"></div>
+<div class="scanlines"></div>
+<div id="labels"></div>
+
+<section class="panel brand">
+  <h1>GIT<span>/</span>CITY</h1>
+  <form class="repo" id="repoForm">
+    <input id="repoInput" value="github.com/acme/web-app" aria-label="GitHub repository link" spellcheck="false">
+    <button type="submit">Build</button>
+  </form>
+  <div class="meta" id="meta"></div>
+</section>
+
+<section class="panel ask">
+  <h2>Which hologram feels right?</h2>
+  <p>v2 — real lighting and shadows, glow only on edges. Pick a look, fly around, then tell me in the terminal.</p>
+  <div class="styles">
+    <button data-choice="blueprint"><span class="k">A</span><span>Blueprint<small>Slate blocks, cyan wire edges</small></span></button>
+    <button data-choice="solid-light"><span class="k">B</span><span>Solid light<small>Glossy glass, soft rim glow</small></span></button>
+    <button data-choice="sliced"><span class="k">C</span><span>Sliced<small>Contour bands up each tower</small></span></button>
+  </div>
+</section>
+
+<section class="panel nav">
+  <button id="diveBtn">Dive in ↓</button>
+</section>
+
+<div class="hint">drag: orbit · scroll: zoom · double-click a building: fly to it · WASD: walk · Q/E: down/up · Esc: step out</div>
+
+<section class="panel timeline">
+  <button id="playBtn" aria-label="Play or pause the time-lapse">❚❚</button>
+  <input id="slider" type="range" min="0" max="199" value="0" aria-label="Snapshot">
+  <div class="stamp" id="stamp"></div>
+</section>
+
+<div class="tip" id="tip" hidden>
+  <div class="path" id="tipPath"></div>
+  <div class="row" id="tipLines"></div>
+  <div class="row" id="tipEdits"></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ---------- constants ----------
+const SNAPSHOTS = 200;
+const TOTAL_COMMITS = 4812;
+const START = new Date(2019, 0, 14);
+const END = new Date(2026, 9, 20);
+const CELL = 1;
+const FOOTPRINT = 0.74;
+const STREET = 1.8;
+const PLAY_RATE = 16; // snapshots per second
+const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const STYLES = {
+  'blueprint':   { id: 0, a: '#22c4ff', b: '#9ff4ff', hot: '#ffad42', css: '#3ff2ff', body: '#2c5468', rough: 0.55, metal: 0.25, env: 0.35, bloom: 0.6 },
+  'solid-light': { id: 1, a: '#5b6cff', b: '#ff5ad6', hot: '#ffd84d', css: '#ff7ae0', body: '#3a2c6e', rough: 0.18, metal: 0.55, env: 1.0, bloom: 0.5 },
+  'sliced':      { id: 2, a: '#19f5a0', b: '#c8ffe6', hot: '#ff4f6d', css: '#3dffb0', body: '#1d3d30', rough: 0.6, metal: 0.2, env: 0.3, bloom: 0.65 },
+};
+
+// path, file count, district born (0..1), district dies (>1 = never), extension
+const FOLDERS = [
+  ['src/components', 44, 0.02, 2, 'tsx'],
+  ['src/pages', 18, 0.0, 2, 'tsx'],
+  ['src/lib', 24, 0.05, 2, 'ts'],
+  ['src/hooks', 14, 0.25, 2, 'ts'],
+  ['src/api', 16, 0.12, 2, 'ts'],
+  ['src/styles', 9, 0.0, 2, 'css'],
+  ['packages/core', 32, 0.42, 2, 'ts'],
+  ['packages/cli', 14, 0.55, 2, 'ts'],
+  ['tests', 28, 0.15, 2, 'test.ts'],
+  ['docs', 18, 0.08, 2, 'md'],
+  ['scripts', 8, 0.3, 2, 'mjs'],
+  ['public', 10, 0.0, 2, 'svg'],
+  ['legacy/jquery', 20, 0.0, 0.62, 'js'],
+  ['.github', 6, 0.6, 2, 'yml'],
+];
+const WORDS = ['auth','button','cache','chart','config','cursor','dialog','editor','event','fetch','form','graph','grid','index','layout','list','loader','menu','modal','parser','query','router','search','session','store','table','theme','token','upload','user','utils','view','worker','queue','stream','toast'];
+const AUTHORS = ['mira.k','devraj','sol','tanvi','oskar','lee-h','priya','j.okafor'];
+
+// ---------- fake repo ----------
+function mulberry32(seed) {
+  return () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(7);
+const pick = (arr) => arr[Math.floor(rand() * arr.length)];
+
+function makeFiles() {
+  const files = [];
+  FOLDERS.forEach(([path, count, born, dies, ext], district) => {
+    const used = new Set();
+    for (let i = 0; i < count; i++) {
+      let name;
+      do { name = pick(WORDS) + (rand() < 0.45 ? '-' + pick(WORDS) : ''); } while (used.has(name));
+      used.add(name);
+      let birth = born + rand() * (1 - born) * Math.pow(rand(), 1.6);
+      let death = rand() < 0.06 ? birth + 0.1 + rand() * (1 - birth) : 2;
+      if (dies < 1) { birth = Math.min(birth, dies - 0.12); death = dies + rand() * 0.08; }
+      const lastAlive = Math.min(death, 1);
+      const edits = Array.from({ length: 3 + Math.floor(rand() * 14) }, () => birth + rand() * (lastAlive - birth)).sort((x, y) => x - y);
+      files.push({ path: `${path}/${name}.${ext}`, district, birth, death, lines: Math.round(Math.exp(3 + rand() * 4)), edits, author: pick(AUTHORS) });
+    }
+  });
+  return files;
+}
+
+function linesAt(f, t) {
+  if (t < f.birth || t >= f.death) return 0;
+  const life = Math.max(Math.min(f.death, 1) - f.birth, 1e-3);
+  return f.lines * (0.15 + 0.85 * Math.pow(Math.min(1, (t - f.birth) / life), 0.55));
+}
+function heatAt(f, t) {
+  if (t >= f.death) return 0;
+  let heat = 0;
+  for (const e of f.edits) { if (e > t) break; heat = Math.max(heat, Math.exp(-(t - e) / 0.012)); }
+  return heat;
+}
+function editsSoFar(f, t) {
+  let n = 0;
+  for (const e of f.edits) { if (e > t) break; n++; }
+  return n;
+}
+const heightFor = (lines) => (lines > 0 ? 0.2 + Math.sqrt(lines) * 0.21 : 0);
+
+function layoutCity(files) {
+  const byDistrict = FOLDERS.map(() => []);
+  files.forEach((f, i) => byDistrict[f.district].push(i));
+  const blocks = byDistrict
+    .map((ids, d) => ({ d, ids, side: Math.ceil(Math.sqrt(ids.length)) }))
+    .sort((p, q) => q.side - p.side);
+  const totalArea = blocks.reduce((s, b) => s + (b.side * CELL + STREET) ** 2, 0);
+  const rowMax = Math.sqrt(totalArea) * 1.1;
+  const districts = [];
+  const streets = [];
+  let x = 0, z = 0, rowDepth = 0;
+  for (const b of blocks) {
+    const w = b.side * CELL;
+    if (x > 0 && x + w > rowMax) {
+      streets.push(z + rowDepth + STREET / 2);
+      x = 0; z += rowDepth + STREET; rowDepth = 0;
+    }
+    b.ids.forEach((id, k) => {
+      files[id].x = x + (k % b.side) * CELL + CELL / 2;
+      files[id].z = z + Math.floor(k / b.side) * CELL + CELL / 2;
+    });
+    const depth = Math.ceil(b.ids.length / b.side) * CELL;
+    districts.push({ index: b.d, name: FOLDERS[b.d][0], x0: x, z0: z, w, depth });
+    x += w + STREET;
+    rowDepth = Math.max(rowDepth, depth);
+  }
+  const maxX = Math.max(...districts.map((d) => d.x0 + d.w));
+  const maxZ = Math.max(...districts.map((d) => d.z0 + d.depth));
+  const cx = maxX / 2, cz = maxZ / 2;
+  files.forEach((f) => { f.x -= cx; f.z -= cz; });
+  districts.forEach((d) => { d.x0 -= cx; d.z0 -= cz; });
+  return { districts, streets: streets.map((s) => s - cz), halfWidth: cx, radius: Math.hypot(maxX, maxZ) / 2 };
+}
+
+// ---------- shaders ----------
+// Hologram effects are injected into MeshStandardMaterial so buildings keep real lighting + shadows.
+const HOLO_DECLS = /* glsl */`
+  uniform float uTime;
+  uniform int uStyle;
+  uniform vec3 uColA;
+  uniform vec3 uColB;
+  uniform vec3 uHot;
+  uniform float uTop;
+  varying vec2 vBoxUv;
+  varying vec3 vWPos;
+  varying vec3 vWNormal;
+  varying float vHeat;
+  varying float vSeed;`;
+
+const HOLO_VERTEX = /* glsl */`
+  mat4 instWorld = modelMatrix * instanceMatrix;
+  vWPos = (instWorld * vec4(transformed, 1.0)).xyz;
+  vWNormal = normalize(mat3(instWorld) * objectNormal);
+  vBoxUv = uv;
+  vHeat = aHeat;
+  vSeed = aSeed;`;
+
+const HOLO_CONTACT_SHADOW = /* glsl */`
+  diffuseColor.rgb *= mix(0.35, 1.0, smoothstep(0.0, 1.4, vWPos.y));`;
+
+const HOLO_EMISSIVE = /* glsl */`
+  {
+    float fres = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 3.0);
+    vec2 edgeDist = min(vBoxUv, 1.0 - vBoxUv) / max(fwidth(vBoxUv), vec2(1e-5));
+    float edge = 1.0 - smoothstep(0.5, 1.6, min(edgeDist.x, edgeDist.y));
+    float rise = clamp(vWPos.y / max(uTop, 0.1), 0.0, 1.0);
+    vec3 tint = mix(uColA, uColB, rise);
+    float isRoof = step(0.9, vWNormal.y);
+    float scan = smoothstep(0.6, 1.0, sin(vWPos.y * 24.0 - uTime * 3.0)) * (1.0 - isRoof);
+    float sweep = smoothstep(0.965, 1.0, fract(vWPos.y * 0.07 - uTime * 0.12));
+    float glitch = step(0.985, fract(sin(floor(uTime * 9.0) * 12.9898 + vSeed * 78.233) * 43758.5453));
+    float glow;
+    if (uStyle == 0) {
+      glow = edge * 1.8 + scan * 0.08 + fres * 0.3 + sweep * 0.5;
+    } else if (uStyle == 1) {
+      glow = edge * 1.0 + fres * 0.8 + isRoof * 0.18 + sweep * 0.3;
+    } else {
+      float slice = smoothstep(0.88, 1.0, fract(vWPos.y * 2.5)) * (1.0 - isRoof);
+      glow = slice * 1.5 + edge * 1.0 + fres * 0.2 + sweep * 0.4;
+    }
+    totalEmissiveRadiance += (tint * glow + uHot * vHeat * 1.4) * (1.0 - 0.5 * glitch);
+  }`;
+
+const WORLD_VS = /* glsl */`
+  varying vec3 vPos;
+  varying vec2 vUv;
+  void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vPos = world.xyz;
+    vUv = uv;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }`;
+
+const FLOOR_FS = /* glsl */`
+  uniform float uTime;
+  uniform vec3 uColA;
+  uniform float uRadius;
+  varying vec3 vPos;
+  float gridLine(vec2 p) {
+    vec2 g = abs(fract(p - 0.5) - 0.5) / fwidth(p);
+    return 1.0 - min(min(g.x, g.y), 1.0);
+  }
+  void main() {
+    float r = length(vPos.xz) / uRadius;
+    float fade = 1.0 - smoothstep(0.75, 1.0, r);
+    float grid = gridLine(vPos.xz) * 0.08 + gridLine(vPos.xz * 0.2) * 0.18;
+    float ring = smoothstep(0.012, 0.0, abs(r - 1.0)) * 0.7 + smoothstep(0.008, 0.0, abs(r - 0.985)) * 0.3;
+    float pulse = smoothstep(0.04, 0.0, abs(r - fract(uTime * 0.12))) * 0.2;
+    gl_FragColor = vec4(uColA, (grid + pulse) * fade + ring);
+  }`;
+
+const BEAM_FS = /* glsl */`
+  uniform float uTime;
+  uniform vec3 uColA;
+  varying vec2 vUv;
+  void main() {
+    float streak = 0.6 + 0.4 * sin(vUv.x * 160.0 + uTime * 0.5) * sin(vUv.x * 37.0 - uTime * 0.3);
+    gl_FragColor = vec4(uColA, pow(1.0 - vUv.y, 1.8) * 0.09 * streak);
+  }`;
+
+const MOTES_VS = /* glsl */`
+  attribute float aSeed;
+  uniform float uTime;
+  uniform float uBeamH;
+  uniform float uTopR;
+  uniform float uBaseR;
+  uniform float uPixel;
+  varying float vAlpha;
+  void main() {
+    float s = fract(position.z + uTime * (0.04 + aSeed * 0.05));
+    float r = mix(uBaseR, uTopR, s) * position.y;
+    vec3 p = vec3(cos(position.x) * r, -uBeamH + s * uBeamH, sin(position.x) * r);
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    gl_Position = projectionMatrix * mv;
+    gl_PointSize = uPixel * (0.6 + aSeed) * (24.0 / -mv.z);
+    vAlpha = sin(s * 3.14159) * 0.45;
+  }`;
+
+const MOTES_FS = /* glsl */`
+  uniform vec3 uColA;
+  varying float vAlpha;
+  void main() {
+    float d = length(gl_PointCoord - 0.5);
+    gl_FragColor = vec4(uColA, smoothstep(0.5, 0.0, d) * vAlpha);
+  }`;
+
+// ---------- scene ----------
+const files = makeFiles();
+const { districts, streets, halfWidth, radius } = layoutCity(files);
+const discRadius = radius + 2;
+const beamHeight = radius * 0.55;
+
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#010407');
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(renderer), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 600);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.4;
+controls.maxDistance = radius * 5;
+
+// lights: key (casts shadows), sky/ground fill, accent rim from behind
+scene.add(new THREE.HemisphereLight('#9fd8ff', '#0a0f14', 1.1));
+const key = new THREE.DirectionalLight('#e8f8ff', 3.0);
+key.position.set(radius * 0.9, radius * 1.6, radius * 0.6);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+Object.assign(key.shadow.camera, { left: -radius - 4, right: radius + 4, top: radius + 4, bottom: -radius - 4, near: 1, far: radius * 5 });
+key.shadow.bias = -0.0004;
+key.shadow.normalBias = 0.03;
+scene.add(key);
+const rim = new THREE.DirectionalLight('#ffffff', 1.6);
+rim.position.set(-radius * 1.2, radius * 0.5, -radius * 1.1);
+scene.add(rim);
+
+const uniforms = {
+  uTime: { value: 0 },
+  uStyle: { value: 0 },
+  uColA: { value: new THREE.Color() },
+  uColB: { value: new THREE.Color() },
+  uHot: { value: new THREE.Color() },
+  uTop: { value: 1 },
+};
+const additive = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide };
+
+// buildings
+const box = new THREE.BoxGeometry(1, 1, 1);
+box.translate(0, 0.5, 0);
+const heat = new Float32Array(files.length);
+box.setAttribute('aHeat', new THREE.InstancedBufferAttribute(heat, 1).setUsage(THREE.DynamicDrawUsage));
+box.setAttribute('aSeed', new THREE.InstancedBufferAttribute(Float32Array.from(files, () => rand()), 1));
+
+const buildingMat = new THREE.MeshStandardMaterial();
+buildingMat.onBeforeCompile = (shader) => {
+  Object.assign(shader.uniforms, uniforms);
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', `#include <common>\nattribute float aHeat;\nattribute float aSeed;\n${HOLO_DECLS}`)
+    .replace('#include <project_vertex>', `#include <project_vertex>\n${HOLO_VERTEX}`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>\n${HOLO_DECLS}`)
+    .replace('#include <color_fragment>', `#include <color_fragment>\n${HOLO_CONTACT_SHADOW}`)
+    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${HOLO_EMISSIVE}`);
+};
+const city = new THREE.InstancedMesh(box, buildingMat, files.length);
+city.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+city.frustumCulled = false;
+city.castShadow = true;
+city.receiveShadow = true;
+city.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 4, 0), radius + 10);
+scene.add(city);
+
+// floor: dark glass that catches shadows, with the glowing grid on top
+const glassFloor = new THREE.Mesh(
+  new THREE.CircleGeometry(discRadius, 128).rotateX(-Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: '#0a141b', roughness: 0.35, metalness: 0.4, transparent: true, opacity: 0.78, depthWrite: false }),
+);
+glassFloor.receiveShadow = true;
+glassFloor.renderOrder = 0;
+scene.add(glassFloor);
+const floorGrid = new THREE.Mesh(
+  new THREE.CircleGeometry(discRadius, 128).rotateX(-Math.PI / 2),
+  new THREE.ShaderMaterial({ uniforms: { uTime: uniforms.uTime, uColA: uniforms.uColA, uRadius: { value: discRadius } }, vertexShader: WORLD_VS, fragmentShader: FLOOR_FS, ...additive }),
+);
+floorGrid.position.y = 0.003;
+floorGrid.renderOrder = 1;
+scene.add(floorGrid);
+
+// district outlines
+const accentMats = [];
+const outlinePts = [];
+for (const d of districts) {
+  const p = 0.3, y = 0.01;
+  const [x0, z0, x1, z1] = [d.x0 - p, d.z0 - p, d.x0 + d.w + p, d.z0 + d.depth + p];
+  outlinePts.push(x0, y, z0, x1, y, z0, x1, y, z0, x1, y, z1, x1, y, z1, x0, y, z1, x0, y, z1, x0, y, z0);
+}
+const outlineGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(outlinePts, 3));
+const outlineMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false });
+accentMats.push(outlineMat);
+const outlines = new THREE.LineSegments(outlineGeo, outlineMat);
+outlines.renderOrder = 2;
+scene.add(outlines);
+
+// projector beam + base
+const beam = new THREE.Mesh(
+  new THREE.CylinderGeometry(discRadius * 0.97, 1.4, beamHeight, 96, 1, true),
+  new THREE.ShaderMaterial({ uniforms: { uTime: uniforms.uTime, uColA: uniforms.uColA }, vertexShader: WORLD_VS, fragmentShader: BEAM_FS, ...additive }),
+);
+beam.position.y = -beamHeight / 2;
+scene.add(beam);
+
+const base = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.9, 0.9, 64), new THREE.MeshStandardMaterial({ color: '#0d1820', roughness: 0.35, metalness: 0.6 }));
+base.position.y = -beamHeight - 0.45;
+scene.add(base);
+for (const [inner, outer] of [[1.15, 1.55], [2.95, 3.1]]) {
+  const mat = new THREE.MeshBasicMaterial({ ...additive, opacity: 0.8 });
+  accentMats.push(mat);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 64).rotateX(-Math.PI / 2), mat);
+  ring.position.y = -beamHeight + 0.01;
+  scene.add(ring);
+}
+
+// motes rising through the beam
+const MOTE_COUNT = 420;
+const motePos = new Float32Array(MOTE_COUNT * 3);
+for (let i = 0; i < MOTE_COUNT; i++) motePos.set([rand() * Math.PI * 2, Math.sqrt(rand()), rand()], i * 3);
+const moteGeo = new THREE.BufferGeometry()
+  .setAttribute('position', new THREE.BufferAttribute(motePos, 3))
+  .setAttribute('aSeed', new THREE.BufferAttribute(Float32Array.from({ length: MOTE_COUNT }, () => rand()), 1));
+const motes = new THREE.Points(moteGeo, new THREE.ShaderMaterial({
+  uniforms: { uTime: uniforms.uTime, uColA: uniforms.uColA, uBeamH: { value: beamHeight }, uTopR: { value: discRadius * 0.95 }, uBaseR: { value: 1.4 }, uPixel: { value: renderer.getPixelRatio() } },
+  vertexShader: MOTES_VS, fragmentShader: MOTES_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+}));
+motes.frustumCulled = false;
+scene.add(motes);
+
+// distant dust
+const dustPos = new Float32Array(900 * 3);
+for (let i = 0; i < 900; i++) {
+  const v = new THREE.Vector3(rand() - 0.5, rand() - 0.5, rand() - 0.5).normalize().multiplyScalar(radius * (4 + rand() * 3));
+  dustPos.set([v.x, v.y, v.z], i * 3);
+}
+scene.add(new THREE.Points(
+  new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(dustPos, 3)),
+  new THREE.PointsMaterial({ color: '#5f8a94', size: 1.3, sizeAttenuation: false, transparent: true, opacity: 0.45, depthWrite: false }),
+));
+
+// post: bloom only catches emissive edges and hot files (high threshold), ACES handles highlights
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.4, 0.85);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ---------- city state ----------
+const curH = new Float32Array(files.length);
+const districtTop = new Float32Array(FOLDERS.length);
+const dummy = new THREE.Object3D();
+let snapshotT = 0;
+
+function updateCity(dt) {
+  const k = 1 - Math.exp(-dt * 9);
+  let maxH = 0.1;
+  districtTop.fill(0);
+  files.forEach((f, i) => {
+    curH[i] += (heightFor(linesAt(f, snapshotT)) - curH[i]) * k;
+    heat[i] += (heatAt(f, snapshotT) - heat[i]) * k;
+    const visible = curH[i] > 0.02;
+    dummy.position.set(f.x, 0, f.z);
+    dummy.scale.set(visible ? FOOTPRINT : 1e-4, Math.max(curH[i], 1e-4), visible ? FOOTPRINT : 1e-4);
+    dummy.updateMatrix();
+    city.setMatrixAt(i, dummy.matrix);
+    maxH = Math.max(maxH, curH[i]);
+    districtTop[f.district] = Math.max(districtTop[f.district], curH[i]);
+  });
+  city.instanceMatrix.needsUpdate = true;
+  box.attributes.aHeat.needsUpdate = true;
+  uniforms.uTop.value += (maxH - uniforms.uTop.value) * k;
+}
+
+// ---------- HUD ----------
+const slider = document.getElementById('slider');
+const stamp = document.getElementById('stamp');
+const playBtn = document.getElementById('playBtn');
+const diveBtn = document.getElementById('diveBtn');
+const meta = document.getElementById('meta');
+let playing = !REDUCED_MOTION;
+let playAcc = 0;
+
+function setMeta(repo) {
+  meta.textContent = '';
+  const name = document.createElement('b');
+  name.textContent = repo;
+  meta.append(name, ` · ${files.length} files · ${FOLDERS.length} districts · ${SNAPSHOTS} snapshots (demo data)`);
+}
+
+function setSnapshot(index) {
+  slider.value = String(index);
+  snapshotT = index / (SNAPSHOTS - 1);
+  const date = new Date(START.getTime() + snapshotT * (END - START));
+  const commit = Math.max(1, Math.round(Math.pow(snapshotT, 1.15) * TOTAL_COMMITS));
+  const alive = files.filter((f) => linesAt(f, snapshotT) > 0).length;
+  stamp.innerHTML = `<b>${date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</b> · commit ${commit.toLocaleString()} · ${alive} files`;
+}
+
+function setPlaying(on) {
+  playing = on;
+  playBtn.textContent = on ? '❚❚' : '▶';
+}
+
+function advancePlayback(dt) {
+  if (!playing) return;
+  playAcc += dt * PLAY_RATE;
+  let index = Number(slider.value);
+  while (playAcc >= 1) { playAcc -= 1; index++; }
+  if (index >= SNAPSHOTS - 1) { index = SNAPSHOTS - 1; setPlaying(false); }
+  if (index !== Number(slider.value)) setSnapshot(index);
+}
+
+slider.addEventListener('input', () => { setPlaying(false); setSnapshot(Number(slider.value)); });
+playBtn.addEventListener('click', () => {
+  if (!playing && Number(slider.value) >= SNAPSHOTS - 1) setSnapshot(0);
+  setPlaying(!playing);
+});
+document.getElementById('repoForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const repo = document.getElementById('repoInput').value.trim() || 'github.com/acme/web-app';
+  setMeta(repo);
+  setSnapshot(0);
+  setPlaying(true);
+});
+
+function applyStyle(key) {
+  const s = STYLES[key];
+  uniforms.uStyle.value = s.id;
+  uniforms.uColA.value.set(s.a);
+  uniforms.uColB.value.set(s.b);
+  uniforms.uHot.value.set(s.hot);
+  buildingMat.color.set(s.body);
+  buildingMat.roughness = s.rough;
+  buildingMat.metalness = s.metal;
+  buildingMat.envMapIntensity = s.env;
+  rim.color.set(s.a);
+  accentMats.forEach((m) => m.color.set(s.a));
+  bloom.strength = s.bloom;
+  document.documentElement.style.setProperty('--accent', s.css);
+  document.querySelectorAll('.styles button').forEach((b) => b.classList.toggle('selected', b.dataset.choice === key));
+}
+document.querySelectorAll('.styles button').forEach((b) => b.addEventListener('click', () => applyStyle(b.dataset.choice)));
+
+// district labels
+const labelLayer = document.getElementById('labels');
+const labels = districts.map((d) => {
+  const el = document.createElement('div');
+  el.className = 'label';
+  el.textContent = d.name;
+  labelLayer.append(el);
+  return { el, d, pos: new THREE.Vector3() };
+});
+function updateLabels() {
+  for (const { el, d, pos } of labels) {
+    const top = districtTop[d.index];
+    pos.set(d.x0 + d.w / 2, top + 0.7, d.z0 + d.depth / 2).project(camera);
+    const hidden = top < 0.05 || pos.z > 1;
+    el.hidden = hidden;
+    if (hidden) continue;
+    el.style.left = `${(pos.x * 0.5 + 0.5) * innerWidth}px`;
+    el.style.top = `${(-pos.y * 0.5 + 0.5) * innerHeight}px`;
+  }
+}
+
+// ---------- camera moves ----------
+const overview = {
+  pos: new THREE.Vector3(radius * 1.25, radius * 0.95, radius * 1.45),
+  target: new THREE.Vector3(0, -radius * 0.12, 0),
+};
+const streetZ = streets.length ? streets[0] : 0;
+const streetView = {
+  pos: new THREE.Vector3(-halfWidth - 1.2, 0.7, streetZ),
+  target: new THREE.Vector3(-halfWidth + 8, 1.8, streetZ),
+};
+let flight = null;
+
+function flyTo({ pos, target }, duration = 1.8) {
+  flight = { fromPos: camera.position.clone(), fromTarget: controls.target.clone(), pos: pos.clone(), target: target.clone(), t: 0, duration };
+}
+function stepFlight(dt) {
+  if (!flight) return;
+  flight.t = Math.min(1, flight.t + dt / flight.duration);
+  const t = flight.t;
+  const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  camera.position.lerpVectors(flight.fromPos, flight.pos, e);
+  camera.position.y += Math.sin(e * Math.PI) * flight.fromPos.distanceTo(flight.pos) * 0.12;
+  controls.target.lerpVectors(flight.fromTarget, flight.target, e);
+  if (t === 1) flight = null;
+}
+const isInside = () => camera.position.y < 3.2 && Math.hypot(camera.position.x, camera.position.z) < radius + 3;
+const stepOut = () => flyTo(overview);
+diveBtn.addEventListener('click', () => (isInside() ? stepOut() : flyTo(streetView, 2.2)));
+
+let insideShown = null;
+function updateDiveButton() {
+  const inside = isInside();
+  if (inside === insideShown) return;
+  insideShown = inside;
+  diveBtn.textContent = inside ? 'Step out ↑' : 'Dive in ↓';
+}
+
+// walking
+const keys = new Set();
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === 'Escape') { stepOut(); return; }
+  keys.add(e.key.toLowerCase());
+});
+addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+addEventListener('blur', () => keys.clear());
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3();
+function walk(dt) {
+  if (!keys.size || flight) return;
+  fwd.subVectors(controls.target, camera.position).setY(0);
+  if (fwd.lengthSq() < 1e-6) return;
+  fwd.normalize();
+  right.crossVectors(fwd, camera.up).normalize();
+  move.set(0, 0, 0);
+  if (keys.has('w')) move.add(fwd);
+  if (keys.has('s')) move.sub(fwd);
+  if (keys.has('d')) move.add(right);
+  if (keys.has('a')) move.sub(right);
+  if (keys.has('e')) move.y += 1;
+  if (keys.has('q')) move.y -= 1;
+  if (!move.lengthSq()) return;
+  const speed = THREE.MathUtils.clamp(camera.position.distanceTo(controls.target) * 0.9, 2.5, 20);
+  move.normalize().multiplyScalar(speed * dt);
+  camera.position.add(move);
+  controls.target.add(move);
+}
+
+// ---------- hover + double-click ----------
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const tip = document.getElementById('tip');
+let pointerIn = false, dragging = false, clientX = 0, clientY = 0;
+
+canvas.addEventListener('pointermove', (e) => {
+  pointerIn = true; clientX = e.clientX; clientY = e.clientY;
+  pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+});
+canvas.addEventListener('pointerleave', () => { pointerIn = false; });
+canvas.addEventListener('pointerdown', () => { dragging = true; flight = null; });
+addEventListener('pointerup', () => { dragging = false; });
+
+function hitBuilding() {
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObject(city, false).find((h) => curH[h.instanceId] > 0.02);
+  return hit ? hit.instanceId : null;
+}
+function updateHover() {
+  const id = pointerIn && !dragging ? hitBuilding() : null;
+  tip.hidden = id === null;
+  if (id === null) return;
+  const f = files[id];
+  document.getElementById('tipPath').textContent = f.path;
+  document.getElementById('tipLines').textContent = `${Math.round(linesAt(f, snapshotT)).toLocaleString()} lines · last touched by ${f.author}`;
+  document.getElementById('tipEdits').textContent = `changed ${editsSoFar(f, snapshotT)} times so far`;
+  tip.style.left = `${clientX}px`;
+  tip.style.top = `${clientY}px`;
+}
+
+canvas.addEventListener('dblclick', () => {
+  const id = hitBuilding();
+  if (id === null) return;
+  const f = files[id];
+  const away = new THREE.Vector3(camera.position.x - f.x, 0, camera.position.z - f.z);
+  if (away.lengthSq() < 1e-4) away.set(1, 0, 1);
+  away.normalize().multiplyScalar(2.6);
+  flyTo({
+    pos: new THREE.Vector3(f.x + away.x, Math.min(curH[id] * 0.4 + 0.5, 2.2), f.z + away.z),
+    target: new THREE.Vector3(f.x, curH[id] * 0.55, f.z),
+  }, 1.4);
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- go ----------
+applyStyle('solid-light');
+setMeta('github.com/acme/web-app');
+setSnapshot(REDUCED_MOTION ? SNAPSHOTS - 1 : 0);
+setPlaying(playing);
+if (REDUCED_MOTION) {
+  camera.position.copy(overview.pos);
+  controls.target.copy(overview.target);
+} else {
+  camera.position.set(radius * 3, radius * 2.4, radius * 3.4);
+  controls.target.copy(overview.target);
+  flyTo(overview, 2.6);
+}
+
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  uniforms.uTime.value += dt;
+  advancePlayback(dt);
+  updateCity(dt);
+  stepFlight(dt);
+  walk(dt);
+  controls.update();
+  updateLabels();
+  updateHover();
+  updateDiveButton();
+  composer.render();
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

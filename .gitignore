@@ -1,0 +1,20 @@
+# brainstorm companion + local session notes
+.superpowers/
+.remember/
+
+# dependencies / build
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+
+# env + vercel
+.env*
+!.env.example
+.vercel/
+
+# os
+.DS_Store
+Thumbs.db
