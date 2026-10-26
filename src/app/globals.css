@@ -12,11 +12,8 @@
   box-sizing: border-box;
 }
 
-html,
 body {
   margin: 0;
-  height: 100%;
-  overflow: hidden;
   background: var(--bg);
   color: var(--ink);
   font: 13px/1.45 var(--font-ui), ui-monospace, Consolas, monospace;
