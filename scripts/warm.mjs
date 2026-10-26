@@ -2,6 +2,7 @@
 // Usage: node scripts/warm.mjs <baseUrl>
 // Walks every example city (latest -> manifest -> all batches) so Vercel's cache is warm.
 import { readFileSync } from 'node:fs';
+import { readJson } from './lib/read-json.mjs';
 import { batchUrls, latestUrl, manifestUrl, normalizeBase } from './lib/warm-plan.mjs';
 
 const base = normalizeBase(process.argv[2]);
@@ -22,12 +23,7 @@ async function getData(url) {
     if (err instanceof Error && err.name === 'TimeoutError') throw new Error(`timed out after 5 minutes: ${url}`);
     throw err;
   }
-  let body = null;
-  try {
-    body = await res.json();
-  } catch {
-    // reported below as "no JSON body"
-  }
+  const body = await readJson(res, url, '5 minutes');
   if (res.status !== 200 || !body || body.ok !== true) {
     const detail = body?.error?.message ?? 'no JSON body';
     throw new Error(`${res.status} ${url} (${detail})`);

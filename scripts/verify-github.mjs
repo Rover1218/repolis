@@ -2,6 +2,7 @@
 // Checks that the GraphQL cursor "<headSha> <n>" returns the same commits as REST pagination.
 // Needs GITHUB_TOKEN in the environment or in .env.local. The token is never printed.
 import { readFileSync } from 'node:fs';
+import { readJson } from './lib/read-json.mjs';
 
 const OWNER = 'facebook';
 const REPO = 'react';
@@ -52,7 +53,8 @@ async function graphql(query) {
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
   });
-  const body = await res.json();
+  const body = await readJson(res, 'https://api.github.com/graphql', '30 seconds');
+  if (!body) throw new Error(`GraphQL returned no JSON body: ${res.status}`);
   if (!res.ok || body.errors) throw new Error(`GraphQL failed: ${res.status} ${JSON.stringify(body.errors ?? body.message)}`);
   return body.data;
 }
@@ -61,7 +63,8 @@ async function restSha(head, rank) {
   const url = `https://api.github.com/repos/${OWNER}/${REPO}/commits?sha=${head}&per_page=1&page=${rank + 1}`;
   const res = await timedFetch(url, { headers });
   if (!res.ok) throw new Error(`REST failed for rank ${rank}: ${res.status}`);
-  const list = await res.json();
+  const list = await readJson(res, url, '30 seconds');
+  if (!Array.isArray(list)) throw new Error(`REST returned no JSON list for rank ${rank}`);
   return list[0]?.sha ?? null;
 }
 
