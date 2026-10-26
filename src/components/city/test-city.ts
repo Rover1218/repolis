@@ -69,6 +69,7 @@ export class FakeScene {
   collapse = vi.fn();
   frame = vi.fn();
   toggleDive = vi.fn();
+  screenshot = vi.fn(() => Promise.resolve(new Blob()));
   dispose = vi.fn();
   labelPositions = vi.fn(() => this.labels);
   isInside = vi.fn(() => this.inside);

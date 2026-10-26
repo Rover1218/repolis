@@ -18,6 +18,7 @@ export type SceneDriver = Pick<
   | 'isInside'
   | 'toggleDive'
   | 'onHover'
+  | 'screenshot'
   | 'dispose'
 >;
 
@@ -128,6 +129,11 @@ export class CityDirector {
 
   toggleDive(): void {
     this.scene.toggleDive();
+  }
+
+  /** A PNG of the current frame. Rejects with a CityError if the canvas yields nothing. */
+  screenshot(): Promise<Blob> {
+    return this.scene.screenshot();
   }
 
   /** One animation frame: playback, scene, labels, then UI changes. */
