@@ -61,7 +61,8 @@ test.describe('city (small fixture)', () => {
     });
     await mockCityApi(page);
     // Registered last, so it runs first: hold the "latest" reply until the canvas is tagged.
-    await page.route(/\/api\/city\/Facebook\/React$/, async (route) => {
+    // The client lower-cases owner/repo in the latest request (R37).
+    await page.route(/\/api\/city\/facebook\/react$/, async (route) => {
       await gate;
       await route.fallback();
     });

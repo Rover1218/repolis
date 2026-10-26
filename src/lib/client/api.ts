@@ -52,8 +52,11 @@ function cityPath(fullName: string): string {
   return `/api/city/${fullName.split('/').map(encodeURIComponent).join('/')}`;
 }
 
+/** Lower-cased so every casing of a repo shares one CDN entry; the server canonicalises the name. */
 export function fetchLatest(ref: RepoRef, signal?: AbortSignal): Promise<LatestCity> {
-  return request<LatestCity>(`/api/city/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}`, signal);
+  const owner = encodeURIComponent(ref.owner.toLowerCase());
+  const repo = encodeURIComponent(ref.repo.toLowerCase());
+  return request<LatestCity>(`/api/city/${owner}/${repo}`, signal);
 }
 
 export function fetchManifest(fullName: string, head: string, signal?: AbortSignal): Promise<CityManifest> {

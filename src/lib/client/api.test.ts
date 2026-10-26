@@ -23,6 +23,12 @@ describe('client api', () => {
     expect(fn.mock.calls[0][1]?.signal).toBe(signal);
   });
 
+  it('fetchLatest lower-cases owner and repo so every casing shares one CDN entry (R37)', async () => {
+    const fn = stubFetch(async () => json({ ok: true, data: { fullName: 'facebook/react' } }));
+    await fetchLatest({ owner: 'FaceBook', repo: 'React.JS' });
+    expect(fn.mock.calls[0][0]).toBe('/api/city/facebook/react.js');
+  });
+
   it('fetchManifest and fetchBatch build canonical URLs', async () => {
     const fn = stubFetch(async () => json({ ok: true, data: {} }));
     await fetchManifest('Own/Re.po', 'abc');
