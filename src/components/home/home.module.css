@@ -212,6 +212,13 @@
   outline-offset: 3px;
 }
 
+/* Not-found page: the way back home, on a chip */
+
+.homeLink {
+  font-weight: 600;
+  color: var(--ink);
+}
+
 @media (max-width: 480px) {
   .hero {
     gap: 22px;
