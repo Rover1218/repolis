@@ -1,12 +1,12 @@
 import { getLatestCity } from '@/lib/data/city-data';
-import { CACHE_LATEST, jsonError, jsonOk, parseRef } from '@/lib/data/http';
+import { CACHE_LATEST, clientKeyFrom, jsonError, jsonOk, parseRef } from '@/lib/data/http';
 
 export const maxDuration = 60;
 
-export async function GET(_request: Request, ctx: { params: Promise<{ owner: string; repo: string }> }): Promise<Response> {
+export async function GET(request: Request, ctx: { params: Promise<{ owner: string; repo: string }> }): Promise<Response> {
   try {
     const { owner, repo } = await ctx.params;
-    return jsonOk(await getLatestCity(parseRef(owner, repo)), CACHE_LATEST);
+    return jsonOk(await getLatestCity(parseRef(owner, repo), clientKeyFrom(request)), CACHE_LATEST);
   } catch (err) {
     return jsonError(err, 'latest');
   }

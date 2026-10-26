@@ -1,4 +1,5 @@
 export const BUILD_LIMIT = { max: 10, windowMs: 600_000 } as const;
+export const LATEST_LIMIT = { max: 30, windowMs: 600_000 } as const;
 
 const MS_PER_MINUTE = 60_000;
 

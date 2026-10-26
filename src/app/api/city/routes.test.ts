@@ -90,7 +90,7 @@ describe('GET /api/city/{owner}/{repo}', () => {
 
 describe('cache keys', () => {
   test('latest key is lower-cased', async () => {
-    await getLatestCity({ owner: 'Facebook', repo: 'React' }).catch(() => undefined);
+    await getLatestCity({ owner: 'Facebook', repo: 'React' }, 'k').catch(() => undefined);
     expect(capturedKeys).toContainEqual(['latest', 'facebook', 'react']);
   });
 
@@ -98,6 +98,44 @@ describe('cache keys', () => {
     await getBatch(req(), ctx({ owner: 'Facebook', repo: 'React', head: HEAD.toUpperCase(), k: '0' }));
     expect(capturedKeys).toContainEqual(['manifest', 'facebook', 'react', HEAD]);
     expect(capturedKeys).toContainEqual(['batch', 'facebook', 'react', HEAD, '0']);
+  });
+});
+
+describe('latest limit', () => {
+  test('the 31st uncached latest call from one visitor is rate limited', async () => {
+    const r = (): Request => new Request('http://x', { headers: { 'x-forwarded-for': '88.8.8.8' } });
+    const c = ctx({ owner: 'facebook', repo: 'react' });
+    for (let i = 0; i < 30; i++) expect((await getLatest(r(), c)).status).toBe(200);
+    const res = await getLatest(r(), c);
+    expect(res.status).toBe(429);
+    expect((await res.json()).error.code).toBe('rate-limited');
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+});
+
+describe('canonical ref and current-head check', () => {
+  test('manifest fullName is canonical regardless of the first caller casing', async () => {
+    const a = await (await getManifest(req(), ctx({ owner: 'Facebook', repo: 'React', head: HEAD }))).json();
+    const b = await (await getManifest(req(), ctx({ owner: 'facebook', repo: 'react', head: HEAD }))).json();
+    expect(a.data.fullName).toBe('facebook/react');
+    expect(b.data).toEqual(a.data);
+  });
+
+  test('a well-formed head that is not the current head gives 502 upstream and builds nothing', async () => {
+    const gh = fake();
+    const spy = vi.spyOn(gh, 'getCommitCount');
+    vi.mocked(getGitHub).mockReturnValue(gh);
+    const res = await getManifest(req(), ctx({ owner: 'facebook', repo: 'react', head: hex(10) }));
+    expect(res.status).toBe(502);
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+    const body = await res.json();
+    expect(body.error).toEqual({ code: 'upstream', message: "Couldn't reach GitHub — try again" });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test('batch with a stale head is also refused', async () => {
+    const res = await getBatch(req(), ctx({ owner: 'facebook', repo: 'react', head: hex(10), k: '0' }));
+    expect(res.status).toBe(502);
   });
 });
 
