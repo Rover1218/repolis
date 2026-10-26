@@ -43,6 +43,10 @@ export interface DirectorListener {
 /** Playback never jumps more than this per frame, e.g. when a background tab wakes up. */
 const MAX_PLAYBACK_DT = 0.1;
 
+/** Heat glow washes small repos out to white, so it shows only while the replay plays (R30). */
+export const HEAT_FADE_SECONDS = 1.5;
+const HEAT_EPSILON = 1e-3;
+
 /**
  * Drives one CityScene outside React: today's city, the replay and its
  * construction waves, and the per-frame tick called by CityView's rAF loop.
@@ -54,6 +58,9 @@ export class CityDirector {
   private listener: DirectorListener | null = null;
   private hasCity = false;
   private waveLeft = 0;
+  private frame: { heights: Float32Array; heat: Float32Array } | null = null;
+  /** 1 while playing (or holding for a construction wave), fading to 0 when not. */
+  private heatScale = 0;
 
   constructor(
     private readonly scene: SceneDriver,
@@ -75,8 +82,10 @@ export class CityDirector {
     this.replay = null;
     this.state = IDLE_REPLAY;
     this.hasCity = true;
+    this.heatScale = 0;
     this.scene.setLayout(layout);
-    this.scene.setFrame(sizes.map(heightFor), new Float32Array(sizes.length));
+    this.frame = { heights: sizes.map(heightFor), heat: new Float32Array(sizes.length) };
+    this.pushFrame();
     if (!this.reducedMotion) this.startWave(constructionDelays(layout, sizes));
     this.publish();
   }
@@ -96,6 +105,7 @@ export class CityDirector {
     this.hasCity = true;
     this.scene.setLayout(replay.layout);
     this.state = startReplay(replay.history.snapshots.length, this.reducedMotion, this.isConstruction);
+    this.heatScale = this.isHeating() ? 1 : 0;
     this.showSnapshot(this.state.playback.index, true);
     this.publish();
   }
@@ -140,6 +150,7 @@ export class CityDirector {
   tick(dt: number): void {
     const step = Number.isFinite(dt) && dt > 0 ? dt : 0;
     this.advance(Math.min(step, MAX_PLAYBACK_DT));
+    this.fadeHeat(Math.min(step, MAX_PLAYBACK_DT));
     this.waveLeft = Math.max(0, this.waveLeft - step);
     this.scene.frame(step);
     this.listener?.onLabels(this.scene.labelPositions());
@@ -172,7 +183,29 @@ export class CityDirector {
     if (byPlayback && this.isConstruction(s)) {
       this.startWave(waveDelays(layout, sizes, s > 0 ? history.sizesAt(s - 1) : null));
     }
-    this.scene.setFrame(sizes.map(heightFor), history.heatAt(s));
+    this.frame = { heights: sizes.map(heightFor), heat: history.heatAt(s) };
+    this.pushFrame();
+  }
+
+  private isHeating(): boolean {
+    return this.state.playback.playing || this.waveLeft > 0;
+  }
+
+  /** Playing restores the heat at once; otherwise it eases out over HEAT_FADE_SECONDS. */
+  private fadeHeat(dt: number): void {
+    if (!this.replay) return;
+    const next = this.isHeating() ? 1 : Math.max(0, this.heatScale - dt / HEAT_FADE_SECONDS);
+    const scale = next < HEAT_EPSILON ? 0 : next;
+    if (scale === this.heatScale) return;
+    this.heatScale = scale;
+    this.pushFrame();
+  }
+
+  private pushFrame(): void {
+    const frame = this.frame;
+    if (!frame) return;
+    const scale = this.heatScale;
+    this.scene.setFrame(frame.heights, scale === 1 ? frame.heat : frame.heat.map((h) => h * scale));
   }
 
   private startWave(delays: Float32Array, seconds = CONSTRUCTION_SECONDS): void {
