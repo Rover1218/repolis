@@ -137,6 +137,36 @@ describe('CityView phases', () => {
   });
 });
 
+describe('file counts (R37)', () => {
+  it('counts merged "+small" blocks as their member files in the HUD', async () => {
+    const latest = makeLatest({
+      files: [
+        ['src/a.ts', 4300],
+        ['src/+small', 9000],
+        ['README.md', 500],
+      ],
+      mergePlan: [{ folder: 'src', keep: ['src/a.ts'], count: 30 }],
+    });
+    data.current = { phase: 'today', latest, progress: 0 };
+    render(view());
+    await liveScene();
+    expect(screen.getByText(/^32 files · \d+ districts?$/)).toBeInTheDocument();
+  });
+
+  it('counts the merged blocks standing at the shown snapshot in the readout', async () => {
+    const { manifest, history } = makeHistory([[['a.ts', 100]], [['src/+small', 900]], [['src/+small', null]]]);
+    manifest.mergePlan = [{ folder: 'src', keep: [], count: 20 }];
+    data.current = { phase: 'history', latest: makeLatest(), manifest, history };
+    render(view());
+    await liveScene();
+    const slider = await screen.findByRole('slider', { name: 'Snapshot' });
+    fireEvent.change(slider, { target: { value: '1' } });
+    expect(slider).toHaveAttribute('aria-valuetext', 'Feb 2024 · commit 2 · 21 files');
+    fireEvent.change(slider, { target: { value: '2' } });
+    expect(slider).toHaveAttribute('aria-valuetext', 'Mar 2024 · commit 3 · 1 file');
+  });
+});
+
 describe('canonical URL', () => {
   afterEach(() => {
     vi.restoreAllMocks();

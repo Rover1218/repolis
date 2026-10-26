@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type CityDataState, useCityData } from '@/hooks/useCityData';
+import { fileCountAt, headFileCount } from '@/lib/city/file-count';
 import { formatReadout, type TooltipInfo } from '@/lib/city/format';
 import { errorMessage } from '@/lib/errors';
 import { isValidOwner, isValidRepoName } from '@/lib/repo-ref';
@@ -114,16 +115,20 @@ export function CityView({ owner, repo }: CityViewProps) {
   }, [fullName, owner, repo]);
 
   const history = sync.replay?.history ?? null;
+  const replayPlan = data.phase === 'history' ? data.manifest.mergePlan : null;
   const readout = useMemo(() => {
     if (!history) return '';
     const i = Math.min(ui.index, history.snapshots.length - 1);
-    return formatReadout(history.snapshots[i], history.filesAliveAt(i));
-  }, [history, ui.index]);
+    return formatReadout(history.snapshots[i], fileCountAt(history, replayPlan ?? [], i));
+  }, [history, replayPlan, ui.index]);
   const info = useHoverInfo(hoverId, sync, data, ui.index);
   const timeline = timelineProps(data, sync.replay, ui, readout, director);
 
   const name = fullName ?? `${owner}/${repo}`;
-  const stats = latest && sync.layout ? { files: latest.files.length, districts: sync.layout.districts.length } : null;
+  const stats =
+    latest && sync.layout
+      ? { files: headFileCount(latest.files.length, latest.mergePlan), districts: sync.layout.districts.length }
+      : null;
   const dive =
     director && !error && sync.layout ? { inside: ui.inside, onToggle: () => director.toggleDive() } : null;
 
