@@ -10,6 +10,22 @@ export interface LoadHistoryOptions {
   signal?: AbortSignal;
 }
 
+function isValidCache(cached: CachedHistory, head: string): boolean {
+  const { manifest, batches } = cached;
+  if (manifest.headSha !== head) return false;
+  if (batches.length !== batchCount(manifest.snapshots.length, manifest.batchSize)) return false;
+  return batches.every((b, i) => b.batch === i);
+}
+
+/** An AbortController that also aborts when `parent` does. */
+function chainedController(parent?: AbortSignal): { controller: AbortController; detach: () => void } {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (parent?.aborted) controller.abort();
+  else parent?.addEventListener('abort', onAbort, { once: true });
+  return { controller, detach: () => parent?.removeEventListener('abort', onAbort) };
+}
+
 export async function loadHistory(
   fullName: string,
   head: string,
@@ -17,23 +33,34 @@ export async function loadHistory(
 ): Promise<CachedHistory> {
   const key = historyCacheKey(fullName, head);
   const cached = await loadCachedHistory(key);
-  if (cached) {
+  if (cached && isValidCache(cached, head)) {
     opts.onProgress(1);
     return cached;
   }
 
-  const manifest = await fetchManifest(fullName, head, opts.signal);
-  const total = batchCount(manifest.snapshots.length, manifest.batchSize);
-  const indices = Array.from({ length: total }, (_, i) => i);
-  let done = 0;
-  const batches = await mapLimit(indices, BATCH_CONCURRENCY, async (k) => {
-    const batch = await fetchBatch(fullName, head, k, opts.signal);
-    done += 1;
-    opts.onProgress(done / total);
-    return batch;
-  });
-
-  const result = { manifest, batches };
-  await saveCachedHistory(key, result);
-  return result;
+  const { controller, detach } = chainedController(opts.signal);
+  const { signal } = controller;
+  try {
+    const manifest = await fetchManifest(fullName, head, signal);
+    const total = batchCount(manifest.snapshots.length, manifest.batchSize);
+    const indices = Array.from({ length: total }, (_, i) => i);
+    let done = 0;
+    const batches = await mapLimit(indices, BATCH_CONCURRENCY, async (k) => {
+      try {
+        const batch = await fetchBatch(fullName, head, k, signal);
+        if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+        done += 1;
+        opts.onProgress(done / total);
+        return batch;
+      } catch (e) {
+        controller.abort(); // stop sibling batches after the first failure
+        throw e;
+      }
+    });
+    const result = { manifest, batches };
+    await saveCachedHistory(key, result);
+    return result;
+  } finally {
+    detach();
+  }
 }

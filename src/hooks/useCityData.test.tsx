@@ -154,4 +154,14 @@ describe('useCityData', () => {
     expect(result.current.phase).toBe('today-only');
     expect((result.current as { historyError: CityError }).historyError.code).toBe('upstream');
   });
+
+  it('stays today-only when sibling batches finish after a batch failure', async () => {
+    vi.stubGlobal('fetch', routeFetch({ failBatch: 2, batchDelayMs: (k) => (k === 2 ? 2000 : 3000) }));
+    const { result, phases } = mount();
+    await advance(1600);
+    await advance(2000);
+    expect(result.current.phase).toBe('today-only');
+    expect((result.current as { historyError: CityError }).historyError.retryAfterMinutes).toBe(7);
+    expect(phases).toEqual(['loading', 'today', 'today-only']);
+  });
 });

@@ -63,7 +63,7 @@ export function useCityData(ref: RepoRef): CityDataState {
           signal,
           onProgress: (p) => {
             progress = p;
-            if (showingToday) update({ phase: 'today', latest, progress });
+            if (showingToday && !settled) update({ phase: 'today', latest, progress });
           },
         });
         settled = true;
