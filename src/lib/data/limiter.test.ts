@@ -2,18 +2,22 @@ import { describe, expect, test } from 'vitest';
 import { BUILD_LIMIT, createLimiter } from './limiter';
 
 describe('createLimiter', () => {
-  test('refuses the 11th call inside the window with the minutes until the oldest expires', () => {
-    const limiter = createLimiter(BUILD_LIMIT);
-    const t = 1_000_000;
-    for (let i = 0; i < 10; i++) expect(limiter.allow('1.2.3.4', t)).toEqual({ ok: true });
-    expect(limiter.allow('1.2.3.4', t)).toEqual({ ok: false, retryAfterMinutes: 10 });
+  test('BUILD_LIMIT is 4 builds per visitor per hour (R34)', () => {
+    expect(BUILD_LIMIT).toEqual({ max: 4, windowMs: 3_600_000 });
   });
 
-  test('allows again once the window has passed', () => {
+  test('refuses the 5th build inside the hour with the minutes until the oldest expires', () => {
     const limiter = createLimiter(BUILD_LIMIT);
     const t = 1_000_000;
-    for (let i = 0; i < 10; i++) limiter.allow('1.2.3.4', t);
-    expect(limiter.allow('1.2.3.4', t + 600_001)).toEqual({ ok: true });
+    for (let i = 0; i < 4; i++) expect(limiter.allow('1.2.3.4', t)).toEqual({ ok: true });
+    expect(limiter.allow('1.2.3.4', t)).toEqual({ ok: false, retryAfterMinutes: 60 });
+  });
+
+  test('allows again once the hour has passed', () => {
+    const limiter = createLimiter(BUILD_LIMIT);
+    const t = 1_000_000;
+    for (let i = 0; i < 4; i++) limiter.allow('1.2.3.4', t);
+    expect(limiter.allow('1.2.3.4', t + 3_600_001)).toEqual({ ok: true });
   });
 
   test('rounds retryAfterMinutes up and never returns less than 1', () => {

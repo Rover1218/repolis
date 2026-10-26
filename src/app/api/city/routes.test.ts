@@ -169,13 +169,13 @@ describe('GET .../{head}/manifest', () => {
     const limited = (): Request => new Request('http://x', { headers: { 'x-forwarded-for': '77.7.7.7' } });
     const c = (i: number) => ctx({ owner: 'facebook', repo: 'react', head: hex(i) });
     // Each head is a distinct manifest miss (every fake commit is an ancestor of the head).
-    for (let i = 1; i <= 10; i++) expect((await getManifest(limited(), c(i))).status).toBe(200);
+    for (let i = 1; i <= 4; i++) expect((await getManifest(limited(), c(i))).status).toBe(200);
     // A cached manifest is not a build, so it never counts.
     expect((await getManifest(limited(), c(1))).status).toBe(200);
-    const res = await getManifest(limited(), c(11));
+    const res = await getManifest(limited(), c(5));
     expect(res.status).toBe(429);
     const body = await res.json();
-    expect(body.error.retryAfterMinutes).toBeGreaterThanOrEqual(1);
+    expect(body.error.retryAfterMinutes).toBe(60);
     expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 });

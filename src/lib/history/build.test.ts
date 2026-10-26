@@ -130,6 +130,17 @@ describe('huge repos', () => {
     expect(paths.length).toBeLessThan(60);
   });
 
+  test('buildManifest refuses up front when the budget cannot cover every tree request (R34)', async () => {
+    // 25 commits, 1 tree request per tree, 25 snapshots in 2 batches: 1 x (25 + 2) = 27 requests.
+    const resetAt = Math.floor(Date.now() / 1000) + 600;
+    const tight = createFakeGitHub({ commits: generateCommits(25), remaining: { remaining: 300 + 26, resetAt } });
+    const ranks = vi.spyOn(tight, 'getCommitsAtRanks');
+    await expect(buildManifest(tight, ref, 'c24')).rejects.toMatchObject({ code: 'rate-limited', retryAfterMinutes: 10 });
+    expect(ranks).toHaveBeenCalledTimes(1); // the head commit only: no snapshot commits fetched
+    const enough = createFakeGitHub({ commits: generateCommits(25), remaining: { remaining: 300 + 27, resetAt } });
+    await expect(buildManifest(enough, ref, 'c24')).resolves.toMatchObject({ batchSize: 20 });
+  });
+
   test('buildBatch refuses when the GitHub budget is nearly spent', async () => {
     const gh = createFakeGitHub({ commits: generateCommits(3), remaining: { remaining: 310, resetAt: Math.floor(Date.now() / 1000) + 600 } });
     const m = await buildManifest(gh, ref, 'c2');

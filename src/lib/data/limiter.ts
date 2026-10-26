@@ -1,4 +1,5 @@
-export const BUILD_LIMIT = { max: 10, windowMs: 600_000 } as const;
+/** Builds (manifest misses) per visitor: the GitHub budget is shared by everyone (R34). */
+export const BUILD_LIMIT = { max: 4, windowMs: 3_600_000 } as const;
 export const LATEST_LIMIT = { max: 30, windowMs: 600_000 } as const;
 
 const MS_PER_MINUTE = 60_000;

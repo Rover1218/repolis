@@ -60,6 +60,9 @@ export async function buildManifest(gh: GitHub, ref: RepoRef, headSha: string, o
   const mergePlan = planFor(headTree, opts);
   const batchSize = chooseBatchSize(headTree.size - foldedFiles(mergePlan), mode);
   const commitIndices = pickSnapshotIndices(totalCommits, truncated ? COARSE_SNAPSHOTS : MAX_SNAPSHOTS);
+  // Fail fast if the batches this manifest promises could not all be built (R34).
+  const count = commitIndices.length;
+  ensureBudget(gh, requests * (count + batchCount(count, batchSize)));
   const ranks = commitIndices.map((i) => toRank(i, totalCommits));
   const commits = await gh.getCommitsAtRanks(ref, headSha, ranks);
   if (commits.length !== ranks.length) throw new CityError('upstream');
