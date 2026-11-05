@@ -40,7 +40,9 @@ const BEAM_FS = /* glsl */ `
   varying vec2 vUv;
   void main() {
     float streak = 0.6 + 0.4 * sin(vUv.x * 160.0 + uTime * 0.5) * sin(vUv.x * 37.0 - uTime * 0.3);
-    gl_FragColor = vec4(uColA, pow(1.0 - vUv.y, 1.8) * 0.09 * streak);
+    // max(): at the top rim vUv.y can interpolate a hair above 1, and Direct3D's pow() of a
+    // negative is NaN; bloom smears that one pixel into a fully black frame.
+    gl_FragColor = vec4(uColA, pow(max(1.0 - vUv.y, 0.0), 1.8) * 0.09 * streak);
   }`;
 
 const MOTES_VS = /* glsl */ `

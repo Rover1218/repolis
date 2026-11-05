@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { createBuildingMaterial, createHoloUniforms } from './holo-material';
 import { SOLID_LIGHT } from './style';
+import { unguardedPowBases } from './test-glsl';
 
 const { vertexShader, fragmentShader } = THREE.ShaderLib.standard;
 
@@ -36,6 +37,12 @@ describe('createBuildingMaterial', () => {
     expect(shader.fragmentShader).toContain('diffuseColor.rgb *= mix(0.35, 1.0');
     expect(shader.fragmentShader).toContain('totalEmissiveRadiance +=');
     expect(shader.fragmentShader).toContain('uniform float uTop;');
+  });
+
+  it('keeps every pow() base non-negative, so Direct3D never renders a NaN that bloom smears into a black frame', () => {
+    const shader = compile(createBuildingMaterial(createHoloUniforms()));
+    expect(shader.fragmentShader).toContain('pow(');
+    expect(unguardedPowBases(shader.fragmentShader)).toEqual([]);
   });
 
   it('keeps the change heat glow at 0.7 so small repos do not wash out (R36)', () => {

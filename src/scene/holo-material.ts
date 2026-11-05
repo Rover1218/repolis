@@ -29,7 +29,8 @@ const HOLO_CONTACT_SHADOW = /* glsl */ `
 
 const HOLO_EMISSIVE = /* glsl */ `
   {
-    float fres = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 3.0);
+    // max(): the dot of two unit vectors can round past 1, and Direct3D's pow() of a negative is NaN.
+    float fres = pow(max(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 0.0), 3.0);
     vec2 edgeDist = min(vBoxUv, 1.0 - vBoxUv) / max(fwidth(vBoxUv), vec2(1e-5));
     float edge = 1.0 - smoothstep(0.5, 1.6, min(edgeDist.x, edgeDist.y));
     float rise = clamp(vWPos.y / max(uTop, 0.1), 0.0, 1.0);
