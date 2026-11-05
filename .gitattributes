@@ -1,0 +1,10 @@
+# Keep LF everywhere, including Windows checkouts (core.autocrlf), so CRLF never reaches tests or tools.
+* text=auto eol=lf
+
+# Never touch line endings in binary assets.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.glb binary
